@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings, load_prompt
+from .db.cameras import CameraSyncError, SupabaseCameraRepository, sync_cameras
 from .detection.activity import ActivityDetector, DetectorConfig, write_json_atomic
 from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
@@ -153,6 +154,47 @@ def command_cameras(settings: Settings, *, json_output: bool = False) -> int:
         state = " [disabled]" if camera.enabled is False else ""
         print(f"{index}. {camera.name}{state} ({camera.id})")
     return 0
+
+
+def command_cameras_sync(settings: Settings, *, dry_run: bool, json_output: bool = False) -> int:
+    if not settings.supabase_url:
+        raise RuntimeError("Missing configuration; set SUPABASE_URL")
+    if not settings.supabase_service_role_key:
+        raise RuntimeError("Missing credential; set SUPABASE_SERVICE_ROLE_KEY")
+    discovered = _xprotect_client(settings).list_cameras()
+    repository = SupabaseCameraRepository(
+        settings.supabase_url,
+        settings.supabase_service_role_key,
+        timeout=settings.request_timeout,
+    )
+    report = sync_cameras(discovered, repository, dry_run=dry_run)
+    if json_output:
+        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+    else:
+        mode = "DRY RUN" if dry_run else "SYNC"
+        print(f"Camera {mode}: {report.discovered} discovered\n")
+        print("ACTION     ENABLED  COORDINATES             NAME (GUID)")
+        for result in report.results:
+            enabled = "yes" if result.enabled else "no" if result.enabled is not None else "-"
+            if result.coordinate_state == "valid":
+                coordinates = f"{result.latitude:.6f}, {result.longitude:.6f}"
+            else:
+                coordinates = f"null ({result.coordinate_state})"
+            print(
+                f"{result.action.upper():<10} {enabled:<8} {coordinates:<23} "
+                f"{result.name} ({result.id})"
+            )
+            if result.error:
+                print(f"  Error: {result.error}")
+        counts = report.counts
+        print(
+            "\nSummary: "
+            + ", ".join(f"{name}={count}" for name, count in counts.items())
+            + f", duplicates={report.to_dict()['duplicates']}"
+        )
+        if dry_run:
+            print("Dry run complete: no Supabase writes were made.")
+    return 1 if report.counts["failed"] else 0
 
 
 def command_check(settings: Settings) -> int:
@@ -393,6 +435,10 @@ def build_parser() -> argparse.ArgumentParser:
     cameras.add_argument(
         "--json", action="store_true", help="print all returned camera metadata as JSON"
     )
+    cameras.add_argument("camera_action", nargs="?", choices=("sync",), help="camera operation")
+    cameras.add_argument(
+        "--dry-run", action="store_true", help="preview synchronization without Supabase writes"
+    )
     sub.add_parser("check", help="check XProtect and Hafnia connectivity without inference")
     analyze = sub.add_parser(
         "analyze",
@@ -469,6 +515,10 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.from_env()
     try:
         if args.command == "cameras":
+            if args.camera_action == "sync":
+                return command_cameras_sync(settings, dry_run=args.dry_run, json_output=args.json)
+            if args.dry_run:
+                raise ValueError("--dry-run is only valid with 'cameras sync'")
             return command_cameras(settings, json_output=args.json)
         if args.command == "check":
             return command_check(settings)
@@ -485,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
         VideoExportError,
         FrameAcquisitionError,
         MipLiveError,
+        CameraSyncError,
         OSError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)

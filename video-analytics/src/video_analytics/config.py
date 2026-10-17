@@ -32,6 +32,8 @@ class Settings:
     xprotect_base_url: str = "http://localhost"
     xprotect_username: str | None = None
     xprotect_password: str | None = None
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
     hafnia_base_url: str = "https://localhost:15443"
     hafnia_username: str = "administrator"
     hafnia_password: str | None = None
@@ -54,6 +56,8 @@ class Settings:
             xprotect_base_url=os.getenv("XPROTECT_BASE_URL", "http://localhost").rstrip("/"),
             xprotect_username=os.getenv("XPROTECT_USERNAME"),
             xprotect_password=os.getenv("XPROTECT_PASSWORD"),
+            supabase_url=os.getenv("SUPABASE_URL"),
+            supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY"),
             hafnia_base_url=os.getenv("HAFNIA_BASE_URL", "https://localhost:15443").rstrip("/"),
             hafnia_username=os.getenv("HAFNIA_USERNAME", "administrator"),
             hafnia_password=os.getenv("HAFNIA_GW_PASSWORD"),

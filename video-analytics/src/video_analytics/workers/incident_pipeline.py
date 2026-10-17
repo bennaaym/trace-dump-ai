@@ -16,6 +16,7 @@ from ..evidence import extract_evidence_frames
 from ..hafnia.client import HafniaClient, HafniaError
 from ..models import Camera
 from ..xprotect.client import validate_utc_timestamp
+from ..xprotect.positioning import parse_camera_position
 from ..xprotect.video_export import run_mip_export
 
 FIELD_NAMES = (
@@ -29,17 +30,6 @@ FIELD_NAMES = (
     "Evidence",
     "Uncertainties",
 )
-DEMO_LOCATIONS = {
-    "TD-DYN-01-Chartrons": (44.8542, -0.5738),
-    "TD-DYN-02-Bacalan": (44.8721, -0.5564),
-    "TD-DYN-03-Bastide": (44.8448, -0.5521),
-    "TD-STA-01-Saint-Michel": (44.8318, -0.5657),
-    "TD-STA-02-Nansouty": (44.8207, -0.5768),
-    "TD-STA-03-Cauderan": (44.8527, -0.6124),
-    "TD-NOR-01-Jardin-Public": (44.8490, -0.5780),
-    "TD-NOR-02-Meriadeck": (44.8385, -0.5873),
-    "TD-NOR-03-Talence": (44.8087, -0.5906),
-}
 
 
 def _utc_now() -> str:
@@ -371,7 +361,8 @@ class IncidentPipeline:
             evidence_status = "complete" if len(evidence) == 3 else "partial"
         except Exception as exc:
             evidence_error = str(exc)
-        latitude, longitude = DEMO_LOCATIONS.get(self.camera.name, (None, None))
+        position = parse_camera_position(self.camera)
+        latitude, longitude = position.latitude, position.longitude
         incident = {
             "id": incident_id,
             "camera_id": self.camera.id,
