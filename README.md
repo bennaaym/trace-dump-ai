@@ -15,7 +15,7 @@ TraceDump AI is a foundation for detecting and investigating suspected waste-dum
 .
 |-- .ai/                 # Project rules, context, and reserved skill directory
 |-- database/            # Supabase migration ownership
-|-- video-analytics/     # Python package scaffold
+|-- video-analytics/     # Migrated Python video analytics worker
 |-- webapp/              # Next.js application
 |-- .env.example         # Documented configuration contract
 `-- AGENTS.md            # Main instructions for coding agents
@@ -40,20 +40,20 @@ Copy the webapp's relevant values from the root `.env.example` into `webapp/.env
 
 ## Video analytics
 
-Python 3.11 is the migration baseline; the package currently supports Python 3.11 through 3.13. Create an isolated environment, install the development tools, and run the scaffold:
+Python 3.11 is the migration baseline; the package currently supports Python 3.11 through 3.13. The migrated worker includes read-only XProtect acquisition/export, MOG2/YOLO activity detection, Hafnia analysis, evidence extraction, and local simulation-run state. Create an isolated environment and install the core development dependencies:
 
 ```bash
 cd video-analytics
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 python -m pip install -e ".[dev]"
-video-analytics
+video-analytics --help
 python -m pytest
 python -m ruff check .
 python -m ruff format --check .
 ```
 
-The worker reads configuration from its process environment. A deployment runner or a future, explicitly selected configuration layer must load values; the service does not implicitly read the repository-root `.env`.
+Install `.[dev,detection]` only when Torch and Ultralytics are required. Model weights and Milestone SDK binaries are not stored in this repository. The worker loads `video-analytics/.env` when present; process variables take precedence. It does not read the repository-root `.env` automatically.
 
 ## Database and AI guidance
 
@@ -61,4 +61,4 @@ The worker reads configuration from its process environment. A deployment runner
 
 ## Current status
 
-This repository contains development tooling and importable application scaffolds only. XProtect monitoring, MOG2/YOLO detection, Hafnia requests, Supabase connectivity, evidence workflows, authentication, and dashboard features have not been migrated or implemented.
+The existing Python worker and mocked tests are migrated into the package structure. Its live XProtect, Hafnia, MIP SDK, ffprobe, and YOLO paths still require the corresponding local services, tools, credentials, and model weights. Supabase persistence, authentication, and dashboard features remain unimplemented.

@@ -23,6 +23,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.pytest-tmp/
 .ruff_cache/
 .mypy_cache/
 .coverage
@@ -44,6 +45,7 @@ evidence/
 *.onnx
 *.engine
 *.weights
+video-analytics/src/video_analytics/xprotect/*_helper/*.exe
 
 # Logs and temporary files
 *.log

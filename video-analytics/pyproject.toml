@@ -5,12 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trace-dump-video-analytics"
 version = "0.1.0"
-description = "Video analytics worker scaffold for TraceDump AI"
+description = "Video analytics worker for TraceDump AI"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-dependencies = []
+dependencies = [
+  "numpy>=2.0,<3",
+  "opencv-python>=4.10,<6",
+  "python-dotenv>=1.0,<2",
+  "requests>=2.32,<3",
+]
 
 [project.optional-dependencies]
+detection = [
+  "torch>=2.2,<3",
+  "ultralytics>=8.3,<9",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.11,<1",
@@ -22,8 +31,15 @@ video-analytics = "video_analytics.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+video_analytics = [
+  "hafnia/prompts/*.txt",
+  "xprotect/mip_exporter_helper/*.cs",
+  "xprotect/mip_live_helper/*.cs",
+]
+
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --basetemp=.pytest-tmp"
 pythonpath = ["src"]
 testpaths = ["tests"]
 
@@ -34,3 +50,4 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

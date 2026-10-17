@@ -1,3 +1,5 @@
-"""TraceDump AI video analytics package."""
+"""TraceDump AI video analytics integrations."""
 
-__version__ = "0.1.0"
+from .models import Camera
+
+__all__ = ["Camera"]

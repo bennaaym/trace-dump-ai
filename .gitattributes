@@ -23,3 +23,4 @@
 *.onnx binary
 *.engine binary
 *.weights binary
+*.exe binary
