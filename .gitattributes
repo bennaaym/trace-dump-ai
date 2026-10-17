@@ -1,0 +1,25 @@
+# Keep repository text files deterministic across Windows and Unix.
+* text=auto eol=lf
+
+# Windows-native scripts should retain Windows line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Treat generated and media assets as binary.
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.mkv binary
+*.webm binary
+*.pt binary
+*.pth binary
+*.onnx binary
+*.engine binary
+*.weights binary
