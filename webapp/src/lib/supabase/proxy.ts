@@ -8,7 +8,6 @@ const protectedPrefixes = [
   "/cameras",
   "/map",
   "/reports",
-  "/settings",
 ];
 
 export async function updateSession(request: NextRequest) {

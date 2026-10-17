@@ -17,7 +17,6 @@ import {
   MapPinned,
   Menu,
   Search,
-  Settings,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -32,7 +31,6 @@ const navigation = [
   { href: "/cameras", label: "Cameras", icon: Camera },
   { href: "/map", label: "Map & Heatmap", icon: MapPinned },
   { href: "/reports", label: "Reports", icon: ChartNoAxesCombined },
-  { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function DashboardShell({
