@@ -1,33 +1,30 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
-import { z } from "zod";
+import { useAction } from "next-safe-action/hooks";
 
-const signInSchema = z.object({
-  email: z.email("Enter a valid email address."),
-  password: z.string().min(8, "Password must contain at least 8 characters."),
-});
+import { loginAction } from "../_actions/login";
 
 export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { execute, isPending, result } = useAction(loginAction);
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = signInSchema.safeParse(
-      Object.fromEntries(new FormData(event.currentTarget)),
-    );
-    if (!result.success) {
-      setMessage(result.error.issues[0]?.message ?? "Check your details.");
-      return;
-    }
-    startTransition(() =>
-      setMessage(
-        "Authentication is not configured. No credentials were sent or stored.",
-      ),
-    );
+    const formData = new FormData(event.currentTarget);
+    execute({
+      email: String(formData.get("email") ?? ""),
+      password: String(formData.get("password") ?? ""),
+    });
   }
+
+  const message = result.validationErrors
+    ? "Enter a valid email address and password."
+    : result.data?.success === false
+      ? result.data.message
+      : result.serverError;
+
   return (
     <form onSubmit={submit} noValidate className="mt-7 space-y-4">
       <label className="block text-xs font-semibold text-slate-700">
@@ -37,6 +34,7 @@ export function LoginForm() {
           <input
             name="email"
             type="email"
+            required
             autoComplete="email"
             placeholder="operator@example.gov"
             className="h-11 w-full rounded-lg border bg-white pr-3 pl-10 text-sm"
@@ -50,6 +48,7 @@ export function LoginForm() {
           <input
             name="password"
             type={showPassword ? "text" : "password"}
+            required
             autoComplete="current-password"
             className="h-11 w-full rounded-lg border bg-white pr-10 pl-10 text-sm"
           />
@@ -70,20 +69,19 @@ export function LoginForm() {
       {message && (
         <p
           role="alert"
-          className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
         >
           {message}
         </p>
       )}
       <button
-        disabled={pending}
+        disabled={isPending}
         className="bg-primary h-11 w-full rounded-lg text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
       >
-        {pending ? "Checking…" : "Sign in"}
+        {isPending ? "Signing in…" : "Sign in"}
       </button>
       <p className="text-center text-xs leading-5 text-slate-500">
-        Preview scaffold only. Supabase Auth is not configured, and this form
-        does not create a session.
+        Access is restricted to accounts provisioned by an administrator.
       </p>
     </form>
   );

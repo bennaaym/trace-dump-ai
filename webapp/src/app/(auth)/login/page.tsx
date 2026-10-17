@@ -1,13 +1,29 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { ShieldCheck } from "lucide-react";
 
+import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "./_components/login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+async function LoginContent() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) redirect("/overview");
+
   return (
     <main className="grid min-h-screen bg-white lg:grid-cols-[1.05fr_.95fr]">
       <section className="bg-sidebar relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between">
@@ -33,7 +49,7 @@ export default function LoginPage() {
           </p>
         </div>
         <p className="text-xs text-slate-400">
-          Secure authentication will be provided by Supabase Auth.
+          Authentication and session security are provided by Supabase Auth.
         </p>
         <div className="absolute -right-32 -bottom-40 size-150 rounded-full border-[80px] border-teal-400/10" />
       </section>
@@ -46,13 +62,6 @@ export default function LoginPage() {
             height={54}
             className="mb-10 lg:hidden"
           />
-          <Link
-            href="/overview"
-            className="mb-8 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900"
-          >
-            <ArrowLeft className="size-4" />
-            Return to dashboard preview
-          </Link>
           <div className="rounded-2xl border bg-white p-7 shadow-sm sm:p-9">
             <h2 className="font-heading text-2xl font-bold text-slate-900">
               Welcome back
@@ -64,6 +73,20 @@ export default function LoginPage() {
           </div>
         </div>
       </section>
+    </main>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-slate-50">
+      <Image
+        src="/brand/logo.svg"
+        alt="TraceDump AI"
+        width={230}
+        height={54}
+        priority
+      />
     </main>
   );
 }

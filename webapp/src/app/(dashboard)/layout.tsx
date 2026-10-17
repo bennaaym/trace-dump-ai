@@ -1,12 +1,28 @@
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { Suspense, type ReactNode } from "react";
 
+import { createClient } from "@/lib/supabase/server";
 import { DashboardShell } from "./_components/dashboard-shell";
 
-export default function DashboardLayout({ children }: LayoutProps<"/">) {
+export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={<DashboardShellFallback />}>
-      <DashboardShell>{children}</DashboardShell>
+      <AuthenticatedDashboard>{children}</AuthenticatedDashboard>
     </Suspense>
+  );
+}
+
+async function AuthenticatedDashboard({ children }: { children: ReactNode }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  return (
+    <DashboardShell userEmail={user.email ?? "Signed-in user"}>
+      {children}
+    </DashboardShell>
   );
 }
 
@@ -15,7 +31,7 @@ function DashboardShellFallback() {
     <div className="min-h-screen bg-slate-100 lg:pl-58">
       <aside className="bg-sidebar fixed inset-y-0 left-0 hidden w-58 lg:block" />
       <div className="h-16 border-b bg-white" />
-      <main className="p-6">Loading workspace…</main>
+      <main className="p-6">Verifying session…</main>
     </div>
   );
 }

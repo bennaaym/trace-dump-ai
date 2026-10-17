@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { useAction } from "next-safe-action/hooks";
 import {
   Bell,
   Camera,
@@ -12,6 +13,7 @@ import {
   ChevronsLeft,
   ClipboardCheck,
   LayoutDashboard,
+  LogOut,
   MapPinned,
   Menu,
   Search,
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { logoutAction } from "../_actions/logout";
 
 const navigation = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
@@ -32,10 +35,19 @@ const navigation = [
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+export function DashboardShell({
+  children,
+  userEmail,
+}: {
+  children: ReactNode;
+  userEmail: string;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const { execute: logout, isPending: isLoggingOut } = useAction(logoutAction);
+  const initials = userEmail.slice(0, 2).toUpperCase();
 
   const sidebar = (
     <>
@@ -169,20 +181,49 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             >
               <Bell className="size-5" />
             </button>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-slate-100"
-              aria-label="Open account menu"
-            >
-              <span className="grid size-8 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
-                OP
-              </span>
-              <span className="hidden text-left text-xs md:block">
-                <strong className="block text-slate-700">Operator</strong>
-                <span className="text-slate-400">Preview mode</span>
-              </span>
-              <ChevronDown className="hidden size-3.5 text-slate-400 md:block" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-slate-100"
+                aria-label="Open account menu"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen((value) => !value)}
+              >
+                <span className="grid size-8 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                  {initials}
+                </span>
+                <span className="hidden max-w-48 text-left text-xs md:block">
+                  <strong className="block text-slate-700">
+                    Authenticated user
+                  </strong>
+                  <span className="block truncate text-slate-400">
+                    {userEmail}
+                  </span>
+                </span>
+                <ChevronDown className="hidden size-3.5 text-slate-400 md:block" />
+              </button>
+              {accountOpen && (
+                <div className="absolute top-full right-0 mt-2 w-64 rounded-xl border bg-white p-2 shadow-lg">
+                  <div className="border-b px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-800">
+                      Signed in as
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
+                      {userEmail}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isLoggingOut}
+                    onClick={() => logout()}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                  >
+                    <LogOut className="size-4" />
+                    {isLoggingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-7">

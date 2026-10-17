@@ -5,6 +5,7 @@ const config: KnipConfig = {
     "src/app/**/{page,layout,loading,error,not-found,route}.{ts,tsx}",
     "src/lib/safe-action.ts",
     "src/lib/utils.ts",
+    "src/lib/supabase/client.ts",
     "src/components/ui/**/*.tsx",
   ],
   project: ["src/**/*.{ts,tsx,css}"],
