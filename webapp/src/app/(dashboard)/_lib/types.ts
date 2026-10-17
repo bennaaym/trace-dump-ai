@@ -1,76 +1,84 @@
 type CameraStatus = "online" | "offline" | "unknown";
-type ReviewStatus =
+export type ReviewStatus =
   "pending_review" | "confirmed" | "dismissed" | "needs_investigation";
-type DumpingClassification = "static" | "dynamic" | "unknown";
+export type IncidentClassification =
+  "static_dumping" | "dynamic_dumping" | "unknown_dumping";
+export type EvidenceRole = "before" | "event" | "after" | "representative";
 
-interface Camera {
+export interface CameraRecord {
   id: string;
   name: string;
-  locationName: string | null;
   latitude: number | null;
   longitude: number | null;
+  locationSource: "real" | "simulated";
+  enabled: boolean;
   status: CameraStatus;
-  monitoringEnabled: boolean;
-  recordingAvailable: boolean | null;
   lastSeenAt: string | null;
-  lastAnalyzedAt: string | null;
-}
-interface Detection {
-  id: string;
-  cameraId: string;
-  activityStartAt: string;
-  activityEndAt: string;
-  recordingStartAt: string | null;
-  recordingEndAt: string | null;
-  createdAt: string;
-}
-interface Analysis {
-  id: string;
-  detectionId: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  classification: DumpingClassification | null;
-  description: string | null;
-  people: string[];
-  vehicles: string[];
-  objects: string[];
-  supportingEvidence: string[];
-  uncertainty: string | null;
-}
-interface Incident {
-  id: string;
-  detectionId: string;
-  cameraId: string;
-  classification: DumpingClassification;
-  reviewStatus: ReviewStatus;
-  description: string | null;
-  eventAt: string;
-  latitude: number | null;
-  longitude: number | null;
-  camera?: Camera;
-}
-interface Evidence {
-  id: string;
-  incidentId: string;
-  role: "before" | "event" | "after" | "other";
-  capturedAt: string | null;
-  objectPath: string;
-  mimeType: string | null;
-}
-interface IncidentReview {
-  id: string;
-  incidentId: string;
-  reviewerId: string;
-  decision: Exclude<ReviewStatus, "pending_review">;
-  notes: string | null;
-  createdAt: string;
 }
 
-export interface DashboardSnapshot {
-  cameras: Camera[];
-  incidents: Incident[];
-  detections: Detection[];
-  analyses: Analysis[];
-  evidence: Evidence[];
-  reviews: IncidentReview[];
-  source: "not_configured";
+interface EvidenceRecord {
+  id: string;
+  role: EvidenceRole;
+  storagePath: string;
+  signedUrl: string | null;
+  capturedAt: string | null;
+  offsetSeconds: number | null;
+  sha256: string | null;
+  extractionMethod: string | null;
+}
+
+export interface IncidentListItem {
+  id: string;
+  detectionId: string;
+  classification: IncidentClassification;
+  reviewStatus: ReviewStatus;
+  description: string;
+  uncertainty: string | null;
+  occurredAt: string | null;
+  createdAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationSource: "real" | "simulated";
+  camera: Pick<CameraRecord, "id" | "name">;
+  thumbnailUrl: string | null;
+}
+
+export interface IncidentDetail extends IncidentListItem {
+  detection: {
+    activityStartAt: string;
+    activityEndAt: string;
+    recordingStartAt: string;
+    recordingEndAt: string;
+    metadata: Record<string, unknown>;
+  };
+  analysis: {
+    id: string;
+    status: "pending" | "processing" | "completed" | "failed";
+    hafniaSummaryId: string | null;
+    promptVersion: string;
+    modelId: string | null;
+    dumpingDetected: "yes" | "no" | "uncertain" | null;
+    dumpingType: "static" | "dynamic" | "unknown" | null;
+    eventOffsetSeconds: number | null;
+    description: string | null;
+    uncertainty: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+  };
+  evidence: EvidenceRecord[];
+  reviews: Array<{
+    id: string;
+    reviewerId: string;
+    decision: Exclude<ReviewStatus, "pending_review">;
+    notes: string | null;
+    createdAt: string;
+  }>;
+}
+
+export interface IncidentPageResult {
+  items: IncidentListItem[];
+  count: number;
+  page: number;
+  pageSize: number;
+  cameras: Pick<CameraRecord, "id" | "name">[];
 }

@@ -93,6 +93,7 @@ Canonical migrations live in `database/migrations/` and apply in timestamp order
 3. Grants and RLS.
 4. Private Storage bucket and object-read policy.
 5. Transactional incident review workflow.
+6. A narrowly scoped bootstrap operator assignment for the initial investigator.
 
 The Supabase CLI does **not** automatically discover this custom directory; it reads `supabase/migrations/`. For local validation, stage exact copies into a CLI project and treat this directory as canonical:
 

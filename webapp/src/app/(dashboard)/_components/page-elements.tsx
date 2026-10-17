@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, CircleOff, Database, MapPin, PlugZap } from "lucide-react";
+import { ArrowRight, Database, MapPin } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import type { CameraRecord, IncidentListItem } from "../_lib/types";
 
 export function PageHeader({
   title,
@@ -32,24 +33,6 @@ export function PageHeader({
       </div>
       {actions}
     </header>
-  );
-}
-
-export function PreviewNotice({ compact = false }: { compact?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900",
-        compact ? "p-3 text-xs" : "mb-5 p-4 text-sm",
-      )}
-    >
-      <PlugZap className="mt-0.5 size-4 shrink-0" />
-      <div>
-        <strong>Data connection pending.</strong> This interface is ready for
-        authenticated Supabase queries; operational data and actions are
-        intentionally unavailable.
-      </div>
-    </div>
   );
 }
 
@@ -168,7 +151,49 @@ export function EmptyState({
   );
 }
 
-export function MapCanvas({ large = false }: { large?: boolean }) {
+export function MapCanvas({
+  large = false,
+  cameras = [],
+  incidents = [],
+}: {
+  large?: boolean;
+  cameras?: CameraRecord[];
+  incidents?: IncidentListItem[];
+}) {
+  const points = [
+    ...cameras.flatMap((item) =>
+      item.latitude == null || item.longitude == null
+        ? []
+        : [
+            {
+              id: `camera-${item.id}`,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              label: item.name,
+              kind: "camera" as const,
+            },
+          ],
+    ),
+    ...incidents.flatMap((item) =>
+      item.latitude == null || item.longitude == null
+        ? []
+        : [
+            {
+              id: `incident-${item.id}`,
+              latitude: item.latitude,
+              longitude: item.longitude,
+              label: item.description,
+              kind: "incident" as const,
+            },
+          ],
+    ),
+  ];
+  const latitudes = points.map((point) => point.latitude);
+  const longitudes = points.map((point) => point.longitude);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
   return (
     <div
       className={cn(
@@ -177,54 +202,48 @@ export function MapCanvas({ large = false }: { large?: boolean }) {
       )}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgb(20_184_166/18%),transparent_15%),radial-gradient(circle_at_30%_70%,rgb(245_158_11/13%),transparent_13%)]" />
-      <div className="absolute inset-0 grid place-items-center p-5 text-center">
-        <div className="rounded-xl border bg-white/95 p-4 shadow-sm">
-          <MapPin className="mx-auto size-5 text-teal-600" />
-          <p className="mt-2 text-sm font-semibold text-slate-800">
-            No mapped observations
-          </p>
-          <p className="mt-1 max-w-xs text-xs text-slate-500">
-            Camera coordinates and incident markers will appear after the data
-            connection is configured.
-          </p>
+      {points.map((point) => {
+        const left =
+          points.length === 1
+            ? 50
+            : 8 +
+              ((point.longitude - minLng) / Math.max(maxLng - minLng, 0.001)) *
+                84;
+        const top =
+          points.length === 1
+            ? 50
+            : 8 +
+              ((maxLat - point.latitude) / Math.max(maxLat - minLat, 0.001)) *
+                84;
+        return (
+          <span
+            key={point.id}
+            title={point.label}
+            className={cn(
+              "absolute z-10 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow",
+              point.kind === "incident" ? "bg-red-500" : "bg-teal-600",
+            )}
+            style={{ left: `${left}%`, top: `${top}%` }}
+          />
+        );
+      })}
+      {!points.length && (
+        <div className="absolute inset-0 grid place-items-center p-5 text-center">
+          <div className="rounded-xl border bg-white/95 p-4 shadow-sm">
+            <MapPin className="mx-auto size-5 text-teal-600" />
+            <p className="mt-2 text-sm font-semibold text-slate-800">
+              No mapped observations
+            </p>
+            <p className="mt-1 max-w-xs text-xs text-slate-500">
+              Camera coordinates and incident markers will appear after the data
+              connection is configured.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
       <Badge tone="neutral" className="absolute right-3 bottom-3 bg-white/90">
-        Map preview
+        {points.length ? `${points.length} mapped records` : "Map preview"}
       </Badge>
-    </div>
-  );
-}
-
-export function EmptyTable({
-  columns,
-  title,
-  description,
-}: {
-  columns: string[];
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl border bg-white">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-180 text-left text-xs">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              {columns.map((column) => (
-                <th
-                  scope="col"
-                  className="px-4 py-3 font-semibold"
-                  key={column}
-                >
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-        </table>
-      </div>
-      <EmptyState icon={CircleOff} title={title} description={description} />
     </div>
   );
 }

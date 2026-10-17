@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -13,6 +14,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 }
 
 async function AuthenticatedDashboard({ children }: { children: ReactNode }) {
+  // This subtree is authenticated and depends on request-time Supabase data.
+  // It also contains rolling date windows that must not run during prerendering.
+  await connection();
   const supabase = await createClient();
   const {
     data: { user },

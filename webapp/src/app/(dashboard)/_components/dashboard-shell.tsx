@@ -111,14 +111,14 @@ export function DashboardShell({
       </nav>
       <div className="m-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
         <p className={cn("font-semibold text-white", collapsed && "lg:hidden")}>
-          Integration status
+          Data source
         </p>
         <p className={cn("mt-1", collapsed && "lg:hidden")}>
-          Data source not connected
+          Authenticated Supabase
         </p>
         <span
           className={cn(
-            "mt-2 inline-flex size-2 rounded-full bg-amber-400",
+            "mt-2 inline-flex size-2 rounded-full bg-emerald-400",
             !collapsed && "hidden",
           )}
         />
@@ -168,7 +168,7 @@ export function DashboardShell({
             <input
               aria-label="Global search preview"
               readOnly
-              placeholder="Search preview — data source not connected"
+              placeholder="Use page filters to search incidents and cameras"
               className="h-9 w-full rounded-lg border bg-slate-50 pr-3 pl-9 text-sm placeholder:text-slate-400"
             />
           </div>

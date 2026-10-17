@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Download, Search } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { ChevronRight, ImageOff, Search } from "lucide-react";
 
+import { EmptyState, PageHeader } from "../_components/page-elements";
+import { formatDateTime, shortId } from "../_lib/format";
 import {
-  EmptyTable,
-  PageHeader,
-  PreviewNotice,
-} from "../_components/page-elements";
+  ClassificationBadge,
+  ReviewStatusBadge,
+} from "./_components/incident-status";
+import { getIncidents } from "./_queries/incidents";
 
 export const metadata: Metadata = { title: "Incidents" };
 
@@ -15,25 +19,24 @@ export default async function IncidentsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const filters = {
+    q: stringValue(params.q),
+    classification: stringValue(params.classification),
+    status: stringValue(params.status),
+    camera: stringValue(params.camera),
+    from: stringValue(params.from),
+    page: stringValue(params.page),
+  };
+  const data = await getIncidents(filters);
+  const totalPages = Math.max(1, Math.ceil(data.count / data.pageSize));
   return (
     <>
       <PageHeader
         title="Incidents"
         description="Search, filter and investigate AI-generated suspected dumping events."
-        actions={
-          <button
-            disabled
-            className="bg-primary inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-50"
-            title="Export requires connected data"
-          >
-            <Download className="size-4" />
-            Export
-          </button>
-        }
       />
-      <PreviewNotice compact />
       <form
-        className="my-4 grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(4,160px)_auto]"
+        className="mb-4 grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(4,160px)_auto]"
         action="/incidents"
       >
         <label className="relative">
@@ -49,7 +52,7 @@ export default async function IncidentsPage({
         <Filter
           name="classification"
           label="All classifications"
-          options={["static", "dynamic", "unknown"]}
+          options={["static_dumping", "dynamic_dumping", "unknown_dumping"]}
           value={params.classification}
         />
         <Filter
@@ -66,15 +69,18 @@ export default async function IncidentsPage({
         <Filter
           name="camera"
           label="All cameras"
-          options={[]}
+          options={data.cameras.map((camera) => camera.id)}
+          optionLabels={Object.fromEntries(
+            data.cameras.map((camera) => [camera.id, camera.name]),
+          )}
           value={params.camera}
-          disabled
         />
         <label>
           <span className="sr-only">Start date</span>
           <input
             type="date"
             name="from"
+            defaultValue={filters.from}
             className="h-9 w-full rounded-lg border bg-white px-3 text-xs text-slate-600"
           />
         </label>
@@ -82,36 +88,114 @@ export default async function IncidentsPage({
           Apply
         </button>
       </form>
-      <EmptyTable
-        columns={[
-          "Thumbnail",
-          "Incident type",
-          "Camera / location",
-          "Date & time",
-          "Review status",
-          "Actions",
-        ]}
-        title="No incidents found"
-        description="No incident records are available. Filters are encoded in the URL and will work when the server-side data source is configured."
-      />
+      <div className="overflow-hidden rounded-xl border bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-220 text-left text-xs">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                {[
+                  "Evidence",
+                  "Incident",
+                  "Camera",
+                  "Date & time",
+                  "Review status",
+                  "",
+                ].map((column) => (
+                  <th className="px-4 py-3 font-semibold" key={column}>
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {data.items.map((incident) => (
+                <tr key={incident.id} className="hover:bg-slate-50/70">
+                  <td className="px-4 py-3">
+                    <div className="relative grid h-14 w-22 place-items-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
+                      {incident.thumbnailUrl ? (
+                        <Image
+                          src={incident.thumbnailUrl}
+                          alt="Incident evidence"
+                          fill
+                          sizes="88px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <ImageOff className="size-5" />
+                      )}
+                    </div>
+                  </td>
+                  <td className="max-w-sm px-4 py-3">
+                    <ClassificationBadge value={incident.classification} />
+                    <p className="mt-1 truncate text-slate-500">
+                      {incident.description}
+                    </p>
+                    <p className="mt-1 font-mono text-[10px] text-slate-400">
+                      #{shortId(incident.id)}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link
+                      className="font-semibold text-slate-800 hover:text-teal-700"
+                      href={`/cameras/${incident.camera.id}`}
+                    >
+                      {incident.camera.name}
+                    </Link>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      {incident.locationSource === "simulated"
+                        ? "Simulated coordinates"
+                        : "Verified coordinates"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDateTime(incident.occurredAt ?? incident.createdAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <ReviewStatusBadge value={incident.reviewStatus} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      aria-label={`Open incident ${incident.id}`}
+                      href={`/incidents/${incident.id}`}
+                      className="inline-grid size-8 place-items-center rounded-lg hover:bg-slate-100"
+                    >
+                      <ChevronRight className="size-4" />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!data.items.length && (
+          <EmptyState
+            title="No incidents found"
+            description="No suspected incidents match the current filters."
+          />
+        )}
+      </div>
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>0 results</span>
+        <span>
+          {data.count} result{data.count === 1 ? "" : "s"}
+        </span>
         <div className="flex gap-2">
-          <button
-            disabled
-            className="rounded-md border bg-white px-3 py-1.5 disabled:opacity-50"
+          <PageLink
+            params={params}
+            page={data.page - 1}
+            disabled={data.page <= 1}
           >
             Previous
-          </button>
+          </PageLink>
           <span className="bg-primary rounded-md px-3 py-1.5 text-white">
-            1
+            {data.page} / {totalPages}
           </span>
-          <button
-            disabled
-            className="rounded-md border bg-white px-3 py-1.5 disabled:opacity-50"
+          <PageLink
+            params={params}
+            page={data.page + 1}
+            disabled={data.page >= totalPages}
           >
             Next
-          </button>
+          </PageLink>
         </div>
       </div>
     </>
@@ -124,12 +208,14 @@ function Filter({
   options,
   value,
   disabled = false,
+  optionLabels = {},
 }: {
   name: string;
   label: string;
   options: string[];
   value: string | string[] | undefined;
   disabled?: boolean;
+  optionLabels?: Record<string, string>;
 }) {
   return (
     <select
@@ -141,9 +227,44 @@ function Filter({
       <option value="">{label}</option>
       {options.map((option) => (
         <option key={option} value={option}>
-          {option.replaceAll("_", " ")}
+          {optionLabels[option] ?? option.replaceAll("_", " ")}
         </option>
       ))}
     </select>
   );
+}
+
+function PageLink({
+  params,
+  page,
+  disabled,
+  children,
+}: {
+  params: Record<string, string | string[] | undefined>;
+  page: number;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (disabled)
+    return (
+      <span className="rounded-md border bg-white px-3 py-1.5 opacity-40">
+        {children}
+      </span>
+    );
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params))
+    if (typeof value === "string" && key !== "page") query.set(key, value);
+  query.set("page", String(page));
+  return (
+    <Link
+      className="rounded-md border bg-white px-3 py-1.5 hover:bg-slate-50"
+      href={`/incidents?${query}`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function stringValue(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

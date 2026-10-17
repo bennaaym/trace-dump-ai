@@ -2,31 +2,22 @@ import type { Metadata } from "next";
 import { Camera, CheckCircle2, Clock3, ShieldAlert } from "lucide-react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import Link from "next/link";
 import {
   EmptyState,
   MapCanvas,
   MetricCard,
   PageHeader,
-  PreviewNotice,
   SectionHeading,
 } from "../_components/page-elements";
-import { getDashboardSnapshot } from "../_queries/dashboard";
+import { formatDateTime } from "../_lib/format";
+import { ReviewStatusBadge } from "../incidents/_components/incident-status";
+import { getOverview } from "./_queries/overview";
 
 export const metadata: Metadata = { title: "Overview" };
 
 export default async function OverviewPage() {
-  const data = await getDashboardSnapshot();
-  const confirmed = data.incidents.filter(
-    (item) => item.reviewStatus === "confirmed",
-  ).length;
-  const pending = data.incidents.filter(
-    (item) =>
-      item.reviewStatus === "pending_review" ||
-      item.reviewStatus === "needs_investigation",
-  ).length;
-  const closed = data.incidents.filter(
-    (item) => item.reviewStatus === "dismissed",
-  ).length;
+  const data = await getOverview();
 
   return (
     <>
@@ -42,7 +33,6 @@ export default async function OverviewPage() {
           </label>
         }
       />
-      <PreviewNotice />
       <section
         aria-label="Incident metrics"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
@@ -50,14 +40,14 @@ export default async function OverviewPage() {
         <MetricCard
           href="/incidents"
           label="Suspected incidents"
-          value={data.incidents.length}
-          hint="No live source connected"
+          value={data.incidentCount}
+          hint="AI-generated leads"
           icon={ShieldAlert}
         />
         <MetricCard
           href="/incidents?status=confirmed"
           label="Confirmed incidents"
-          value={confirmed}
+          value={data.confirmedCount}
           hint="Reviewed by operators"
           icon={CheckCircle2}
           tone="teal"
@@ -65,16 +55,16 @@ export default async function OverviewPage() {
         <MetricCard
           href="/review"
           label="Pending review"
-          value={pending}
+          value={data.pendingCount}
           hint="Awaiting operator review"
           icon={Clock3}
           tone="amber"
         />
         <MetricCard
-          href="/incidents?status=dismissed"
-          label="Dismissed incidents"
-          value={closed}
-          hint="Closed after review"
+          href="/cameras?monitoring=enabled"
+          label="Monitored cameras"
+          value={data.monitoredCount}
+          hint="Enabled for monitoring"
           icon={Camera}
           tone="green"
         />
@@ -89,7 +79,10 @@ export default async function OverviewPage() {
             />
           </CardHeader>
           <CardContent>
-            <MapCanvas />
+            <MapCanvas
+              cameras={data.cameras}
+              incidents={data.recentIncidents}
+            />
           </CardContent>
         </Card>
         <Card>
@@ -101,10 +94,32 @@ export default async function OverviewPage() {
             />
           </CardHeader>
           <CardContent className="px-0">
-            <EmptyState
-              title="No incidents to show"
-              description="Recent suspected incidents will appear after authenticated Supabase queries are connected."
-            />
+            {data.recentIncidents.length ? (
+              <div className="divide-y">
+                {data.recentIncidents.map((incident) => (
+                  <Link
+                    key={incident.id}
+                    href={`/incidents/${incident.id}`}
+                    className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold">
+                        {incident.camera.name}
+                      </p>
+                      <p className="mt-1 text-[10px] text-slate-400">
+                        {formatDateTime(incident.occurredAt)}
+                      </p>
+                    </div>
+                    <ReviewStatusBadge value={incident.reviewStatus} />
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No incidents to show"
+                description="Automatically detected suspected incidents will appear here."
+              />
+            )}
           </CardContent>
         </Card>
         <div className="grid gap-5">
@@ -126,15 +141,27 @@ export default async function OverviewPage() {
                 <div className="space-y-2 text-xs text-slate-500">
                   <p>
                     <span className="mr-2 inline-block size-2 rounded-full bg-green-500" />
-                    0 online
+                    {
+                      data.cameras.filter((item) => item.status === "online")
+                        .length
+                    }{" "}
+                    online
                   </p>
                   <p>
                     <span className="mr-2 inline-block size-2 rounded-full bg-red-500" />
-                    0 offline
+                    {
+                      data.cameras.filter((item) => item.status === "offline")
+                        .length
+                    }{" "}
+                    offline
                   </p>
                   <p>
                     <span className="mr-2 inline-block size-2 rounded-full bg-slate-400" />
-                    0 unknown
+                    {
+                      data.cameras.filter((item) => item.status === "unknown")
+                        .length
+                    }{" "}
+                    unknown
                   </p>
                 </div>
               </div>
@@ -151,18 +178,19 @@ export default async function OverviewPage() {
             <CardContent>
               <div
                 className="flex h-28 items-end gap-2 border-b border-l px-3 pb-2"
-                aria-label="No detection activity data"
+                aria-label="Detection activity over the last seven days"
               >
-                {[0, 0, 0, 0, 0, 0, 0, 0, 0, 0].map((value, index) => (
+                {data.activity.map((item) => (
                   <span
                     className="w-full rounded-t bg-slate-100"
-                    style={{ height: `${Math.max(4, value)}%` }}
-                    key={index}
+                    title={`${item.day}: ${item.count}`}
+                    style={{ height: `${Math.max(4, item.count * 18)}%` }}
+                    key={item.day}
                   />
                 ))}
               </div>
               <p className="mt-3 text-center text-xs text-slate-400">
-                No activity data available
+                Detections during the last seven days
               </p>
             </CardContent>
           </Card>

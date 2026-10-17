@@ -2,15 +2,13 @@ import type { Metadata } from "next";
 import { Layers3 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  MapCanvas,
-  PageHeader,
-  PreviewNotice,
-} from "../_components/page-elements";
+import { MapCanvas, PageHeader } from "../_components/page-elements";
+import { getMapData } from "./_queries/map";
 
 export const metadata: Metadata = { title: "Map & Heatmap" };
 
-export default function MapPage() {
+export default async function MapPage() {
+  const data = await getMapData();
   return (
     <>
       <PageHeader
@@ -25,7 +23,6 @@ export default function MapPage() {
           </label>
         }
       />
-      <PreviewNotice compact />
       <div className="mt-4 grid gap-4 xl:grid-cols-[220px_1fr]">
         <aside className="surface h-fit p-4">
           <div className="flex items-center gap-2">
@@ -51,34 +48,24 @@ export default function MapPage() {
           </fieldset>
           <div className="my-5 border-t" />
           <div className="space-y-3">
-            <select
-              disabled
-              className="h-9 w-full rounded-lg border bg-slate-50 px-3 text-xs"
-            >
-              <option>All incident types</option>
-            </select>
-            <select
-              disabled
-              className="h-9 w-full rounded-lg border bg-slate-50 px-3 text-xs"
-            >
-              <option>All review statuses</option>
-            </select>
-            <select
-              disabled
-              className="h-9 w-full rounded-lg border bg-slate-50 px-3 text-xs"
-            >
-              <option>All cameras</option>
-            </select>
+            <p className="text-xs text-slate-500">
+              {data.incidents.length} incident marker
+              {data.incidents.length === 1 ? "" : "s"}
+            </p>
+            <p className="text-xs text-slate-500">
+              {data.cameras.length} camera location
+              {data.cameras.length === 1 ? "" : "s"}
+            </p>
           </div>
           <Badge tone="warning" className="mt-5">
-            Coordinates unavailable
+            Simulated geography
           </Badge>
           <p className="mt-2 text-xs leading-5 text-slate-500">
-            Synthetic Bordeaux coordinates will only be shown when clearly
-            identified by the connected source.
+            Current Bordeaux camera coordinates are simulated. Incident markers
+            use immutable event-time snapshots.
           </p>
         </aside>
-        <MapCanvas large />
+        <MapCanvas large cameras={data.cameras} incidents={data.incidents} />
       </div>
     </>
   );

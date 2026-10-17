@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Camera, ChevronLeft, MapPin, Play } from "lucide-react";
+import { notFound } from "next/navigation";
+import { Camera, ChevronLeft, MapPin } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -9,7 +10,12 @@ import {
   MapCanvas,
   SectionHeading,
 } from "../../_components/page-elements";
-import { getCameraById } from "../../_queries/dashboard";
+import { formatDateTime } from "../../_lib/format";
+import {
+  ClassificationBadge,
+  ReviewStatusBadge,
+} from "../../incidents/_components/incident-status";
+import { getCamera } from "../_queries/cameras";
 
 export const metadata: Metadata = { title: "Camera Detail" };
 
@@ -19,7 +25,9 @@ export default async function CameraDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const camera = await getCameraById(id);
+  const data = await getCamera(id);
+  if (!data) notFound();
+  const { camera } = data;
   return (
     <>
       <Link
@@ -32,81 +40,113 @@ export default async function CameraDetailPage({
       <header className="mb-5">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-heading text-2xl font-bold text-slate-900">
-            Camera {id}
+            {camera.name}
           </h1>
-          <Badge>Unavailable</Badge>
+          <Badge
+            tone={
+              camera.status === "online"
+                ? "success"
+                : camera.status === "offline"
+                  ? "danger"
+                  : "neutral"
+            }
+          >
+            {camera.status}
+          </Badge>
+          <Badge tone={camera.enabled ? "teal" : "neutral"}>
+            {camera.enabled ? "Monitoring enabled" : "Monitoring disabled"}
+          </Badge>
         </div>
-        <p className="mt-1 text-sm text-slate-500">
-          {camera
-            ? "Camera record loaded."
-            : "No camera record was found for this ID."}
-        </p>
+        <p className="mt-1 font-mono text-xs text-slate-400">{camera.id}</p>
       </header>
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
+      <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <SectionHeading
-              title="Video preview"
-              description="Authenticated recording playback"
-            />
+            <SectionHeading title="Camera information" />
           </CardHeader>
           <CardContent>
-            <div className="grid min-h-80 place-items-center rounded-lg bg-slate-950 text-center text-white">
-              <div>
-                <Play className="mx-auto size-8 text-slate-500" />
-                <p className="mt-3 text-sm font-semibold">
-                  Preview unavailable
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  No recording metadata is connected.
-                </p>
-              </div>
-            </div>
+            <dl className="grid grid-cols-[130px_1fr] gap-y-3 text-xs">
+              <dt className="text-slate-500">Connectivity</dt>
+              <dd>{camera.status}</dd>
+              <dt className="text-slate-500">Monitoring</dt>
+              <dd>
+                {camera.enabled ? "Enabled" : "Disabled"} (not a connectivity
+                signal)
+              </dd>
+              <dt className="text-slate-500">Last seen</dt>
+              <dd>{formatDateTime(camera.lastSeenAt)}</dd>
+              <dt className="text-slate-500">Coordinates</dt>
+              <dd>
+                {camera.latitude == null
+                  ? "Unavailable"
+                  : `${camera.latitude.toFixed(6)}, ${camera.longitude?.toFixed(6)}`}
+              </dd>
+              <dt className="text-slate-500">Location source</dt>
+              <dd>
+                {camera.locationSource === "simulated"
+                  ? "Simulated Bordeaux metadata"
+                  : "Source metadata"}
+              </dd>
+            </dl>
           </CardContent>
         </Card>
-        <div className="space-y-5">
-          <Card>
-            <CardHeader>
-              <SectionHeading title="Camera information" />
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-[120px_1fr] gap-y-3 text-xs">
-                <dt className="text-slate-500">Connectivity</dt>
-                <dd>Unknown</dd>
-                <dt className="text-slate-500">Recording</dt>
-                <dd>Unknown</dd>
-                <dt className="text-slate-500">Monitoring</dt>
-                <dd>Not connected</dd>
-                <dt className="text-slate-500">Last seen</dt>
-                <dd>Unavailable</dd>
-                <dt className="text-slate-500">Last analyzed</dt>
-                <dd>Unavailable</dd>
-              </dl>
-            </CardContent>
-          </Card>
-          <MapCanvas />
-        </div>
+        <MapCanvas cameras={[camera]} />
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <SectionHeading title="Recent detections" />
           </CardHeader>
-          <EmptyState
-            icon={Camera}
-            title="No detections"
-            description="Detections from this camera will appear after integration."
-          />
+          {data.detections.length ? (
+            <div className="divide-y">
+              {data.detections.map((detection) => (
+                <div key={detection.id} className="px-5 py-3 text-xs">
+                  <p className="font-semibold">
+                    Activity {formatDateTime(detection.activity_start_at)}
+                  </p>
+                  <p className="mt-1 font-mono text-[10px] text-slate-400">
+                    {detection.id}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Camera}
+              title="No detections"
+              description="No activity detections are associated with this camera."
+            />
+          )}
         </Card>
         <Card>
           <CardHeader>
             <SectionHeading title="Associated incidents" />
           </CardHeader>
-          <EmptyState
-            icon={MapPin}
-            title="No incidents"
-            description="Linked suspected incidents will appear after integration."
-          />
+          {data.incidents.length ? (
+            <div className="divide-y">
+              {data.incidents.map((incident) => (
+                <Link
+                  href={`/incidents/${incident.id}`}
+                  key={incident.id}
+                  className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50"
+                >
+                  <div>
+                    <ClassificationBadge value={incident.classification} />
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      {formatDateTime(incident.occurred_at)}
+                    </p>
+                  </div>
+                  <ReviewStatusBadge value={incident.review_status} />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={MapPin}
+              title="No incidents"
+              description="No suspected incidents are associated with this camera."
+            />
+          )}
         </Card>
       </div>
     </>

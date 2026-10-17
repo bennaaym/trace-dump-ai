@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { getIncidentById } from "../../_queries/dashboard";
+import { classificationLabel, formatDateTime } from "../../_lib/format";
+import { ReviewStatusBadge } from "../_components/incident-status";
 import { IncidentTabs, ReviewActions } from "./_components/incident-tabs";
+import { getIncident } from "./_queries/incident";
 
 export const metadata: Metadata = { title: "Incident Detail" };
 
@@ -14,7 +17,8 @@ export default async function IncidentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const incident = await getIncidentById(id);
+  const incident = await getIncident(id);
+  if (!incident) notFound();
   return (
     <>
       <Link
@@ -28,21 +32,20 @@ export default async function IncidentPage({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-2xl font-bold text-slate-900">
-              Incident {id}
+              Incident {id.slice(0, 8)}
             </h1>
-            <Badge tone="warning">Unavailable</Badge>
+            <ReviewStatusBadge value={incident.reviewStatus} />
           </div>
           <p className="mt-2 text-sm text-slate-500">
-            {incident
-              ? "Incident record loaded."
-              : "This incident could not be loaded because the data source is not configured or the ID is invalid."}
+            {classificationLabel(incident.classification)} ·{" "}
+            {incident.camera.name} · {formatDateTime(incident.occurredAt)}
           </p>
         </div>
         <Badge tone="teal">Investigation workspace</Badge>
       </header>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
-        <IncidentTabs incidentId={id} />
-        <ReviewActions />
+        <IncidentTabs incident={incident} />
+        <ReviewActions incidentId={id} status={incident.reviewStatus} />
       </div>
     </>
   );
