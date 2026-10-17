@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useAction } from "next-safe-action/hooks";
 
 import { loginAction } from "../_actions/login";
@@ -26,37 +26,38 @@ export function LoginForm() {
       : result.serverError;
 
   return (
-    <form onSubmit={submit} noValidate className="mt-7 space-y-4">
-      <label className="block text-xs font-semibold text-slate-700">
+    <form onSubmit={submit} noValidate className="mt-9 space-y-6">
+      <label className="block text-sm font-semibold text-slate-800">
         Email address
         <div className="relative mt-1.5">
-          <Mail className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+          <Mail className="absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
           <input
             name="email"
             type="email"
             required
             autoComplete="email"
-            placeholder="operator@example.gov"
-            className="h-11 w-full rounded-lg border bg-white pr-3 pl-10 text-sm"
+            placeholder="Enter your email"
+            className="h-14 w-full rounded-xl border border-slate-200 bg-white pr-4 pl-14 text-base shadow-sm placeholder:text-slate-400"
           />
         </div>
       </label>
-      <label className="block text-xs font-semibold text-slate-700">
+      <label className="block text-sm font-semibold text-slate-800">
         Password
         <div className="relative mt-1.5">
-          <LockKeyhole className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+          <LockKeyhole className="absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
           <input
             name="password"
             type={showPassword ? "text" : "password"}
             required
             autoComplete="current-password"
-            className="h-11 w-full rounded-lg border bg-white pr-10 pl-10 text-sm"
+            placeholder="Enter your password"
+            className="h-14 w-full rounded-xl border border-slate-200 bg-white pr-12 pl-14 text-base shadow-sm placeholder:text-slate-400"
           />
           <button
             type="button"
             aria-label={showPassword ? "Hide password" : "Show password"}
             onClick={() => setShowPassword((value) => !value)}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-2 text-slate-400"
+            className="absolute top-1/2 right-3 -translate-y-1/2 rounded p-2 text-slate-400"
           >
             {showPassword ? (
               <EyeOff className="size-4" />
@@ -76,13 +77,11 @@ export function LoginForm() {
       )}
       <button
         disabled={isPending}
-        className="bg-primary h-11 w-full rounded-lg text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+        className="bg-primary flex h-14 w-full items-center justify-center gap-3 rounded-xl text-base font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
       >
         {isPending ? "Signing in…" : "Sign in"}
+        {!isPending && <ArrowRight className="size-5" />}
       </button>
-      <p className="text-center text-xs leading-5 text-slate-500">
-        Access is restricted to accounts provisioned by an administrator.
-      </p>
     </form>
   );
 }
