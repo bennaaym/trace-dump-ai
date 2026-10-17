@@ -1,20 +1,6 @@
 import { Badge } from "@/components/ui/badge";
-import { classificationLabel, reviewStatusLabel } from "../../_lib/format";
-import type { IncidentClassification, ReviewStatus } from "../../_lib/types";
-
-export function ClassificationBadge({
-  value,
-}: {
-  value: IncidentClassification;
-}) {
-  const tone =
-    value === "dynamic_dumping"
-      ? "info"
-      : value === "static_dumping"
-        ? "teal"
-        : "neutral";
-  return <Badge tone={tone}>{classificationLabel(value)}</Badge>;
-}
+import { reviewStatusLabel } from "../../_lib/format";
+import type { ReviewStatus } from "../../_lib/types";
 
 export function ReviewStatusBadge({ value }: { value: ReviewStatus }) {
   const tone = {

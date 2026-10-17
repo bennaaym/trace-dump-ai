@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CircleOff,
   Eye,
+  SearchCheck,
   ShieldAlert,
 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import {
   PageHeader,
   SectionHeading,
 } from "../_components/page-elements";
+import { reviewStatusLabel } from "../_lib/format";
 import { getReports } from "./_queries/reports";
 
 export const metadata: Metadata = { title: "Reports" };
@@ -28,7 +30,7 @@ export default async function ReportsPage() {
       <p className="mb-4 text-xs text-slate-500">
         Statistics cover the last 30 days and reflect stored records only.
       </p>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           label="Total detections"
           value={data.detectionCount}
@@ -36,14 +38,20 @@ export default async function ReportsPage() {
           icon={Eye}
         />
         <MetricCard
-          label="Suspected incidents"
-          value={data.incidentCount}
-          hint="Created from detections"
+          label="Suspected dumping"
+          value={data.suspectedCount}
+          hint="Awaiting operator review"
           icon={ShieldAlert}
           tone="teal"
         />
         <MetricCard
-          label="Confirmed"
+          label="Needs investigation"
+          value={data.investigationCount}
+          hint="Further review required"
+          icon={SearchCheck}
+        />
+        <MetricCard
+          label="Confirmed incidents"
           value={data.confirmedCount}
           hint="Operator reviewed"
           icon={CheckCircle2}
@@ -72,16 +80,9 @@ export default async function ReportsPage() {
           }))}
         />
         <ReportCard
-          title="Incident classifications"
-          values={data.byClassification.map((item) => ({
-            label: item.key.replaceAll("_", " "),
-            value: item.count,
-          }))}
-        />
-        <ReportCard
-          title="Review status distribution"
+          title="Incident status distribution"
           values={data.byStatus.map((item) => ({
-            label: item.key.replaceAll("_", " "),
+            label: reviewStatusLabel(item.key),
             value: item.count,
           }))}
         />

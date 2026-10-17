@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Camera, CheckCircle2, Clock3, ShieldAlert } from "lucide-react";
+import { Camera, CheckCircle2, SearchCheck, ShieldAlert } from "lucide-react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import Link from "next/link";
@@ -38,10 +38,10 @@ export default async function OverviewPage() {
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
         <MetricCard
-          href="/incidents"
-          label="Suspected incidents"
-          value={data.incidentCount}
-          hint="AI-generated leads"
+          href="/incidents?status=pending_review"
+          label="Suspected dumping"
+          value={data.suspectedCount}
+          hint="AI leads awaiting review"
           icon={ShieldAlert}
         />
         <MetricCard
@@ -53,11 +53,11 @@ export default async function OverviewPage() {
           tone="teal"
         />
         <MetricCard
-          href="/review"
-          label="Pending review"
-          value={data.pendingCount}
-          hint="Awaiting operator review"
-          icon={Clock3}
+          href="/incidents?status=needs_investigation"
+          label="Needs investigation"
+          value={data.investigationCount}
+          hint="Further review required"
+          icon={SearchCheck}
           tone="amber"
         />
         <MetricCard

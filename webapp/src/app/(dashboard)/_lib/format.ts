@@ -1,4 +1,4 @@
-import type { IncidentClassification, ReviewStatus } from "./types";
+import type { ReviewStatus } from "./types";
 
 export function formatDateTime(value: string | null): string {
   if (!value) return "Unknown";
@@ -9,18 +9,10 @@ export function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
-export function classificationLabel(value: IncidentClassification): string {
-  return {
-    static_dumping: "Static dumping",
-    dynamic_dumping: "Dynamic dumping",
-    unknown_dumping: "Unknown dumping",
-  }[value];
-}
-
 export function reviewStatusLabel(value: ReviewStatus): string {
   return {
-    pending_review: "Pending review",
-    confirmed: "Confirmed",
+    pending_review: "Suspected dumping",
+    confirmed: "Confirmed incident",
     dismissed: "Dismissed",
     needs_investigation: "Needs investigation",
   }[value];

@@ -8,32 +8,43 @@ export async function getOverview() {
   await connection();
   const { supabase } = await authenticatedClient();
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const [incidents, confirmed, pending, camerasResult, detectionsResult] =
-    await Promise.all([
-      getIncidents(),
-      supabase
-        .from("incidents")
-        .select("id", { count: "exact", head: true })
-        .eq("review_status", "confirmed"),
-      supabase
-        .from("incidents")
-        .select("id", { count: "exact", head: true })
-        .in("review_status", ["pending_review", "needs_investigation"]),
-      supabase
-        .from("cameras")
-        .select(
-          "id,name,latitude,longitude,location_source,enabled,status,last_seen_at",
-        )
-        .order("name"),
-      supabase
-        .from("detections")
-        .select("created_at")
-        .gte("created_at", since)
-        .order("created_at"),
-    ]);
+  const [
+    incidents,
+    confirmed,
+    suspected,
+    investigating,
+    camerasResult,
+    detectionsResult,
+  ] = await Promise.all([
+    getIncidents(),
+    supabase
+      .from("incidents")
+      .select("id", { count: "exact", head: true })
+      .eq("review_status", "confirmed"),
+    supabase
+      .from("incidents")
+      .select("id", { count: "exact", head: true })
+      .eq("review_status", "pending_review"),
+    supabase
+      .from("incidents")
+      .select("id", { count: "exact", head: true })
+      .eq("review_status", "needs_investigation"),
+    supabase
+      .from("cameras")
+      .select(
+        "id,name,latitude,longitude,location_source,enabled,status,last_seen_at",
+      )
+      .order("name"),
+    supabase
+      .from("detections")
+      .select("created_at")
+      .gte("created_at", since)
+      .order("created_at"),
+  ]);
   if (
     confirmed.error ||
-    pending.error ||
+    suspected.error ||
+    investigating.error ||
     camerasResult.error ||
     detectionsResult.error
   ) {
@@ -61,9 +72,9 @@ export async function getOverview() {
     };
   });
   return {
-    incidentCount: incidents.count,
+    suspectedCount: suspected.count ?? 0,
     confirmedCount: confirmed.count ?? 0,
-    pendingCount: pending.count ?? 0,
+    investigationCount: investigating.count ?? 0,
     monitoredCount: cameras.filter((camera) => camera.enabled).length,
     cameras,
     recentIncidents: incidents.items.slice(0, 5),

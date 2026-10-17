@@ -13,6 +13,7 @@ DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "hafnia" / "prompts" / "dumping_v1.txt"
 DEFAULT_RUNS_DIR = PROJECT_ROOT / "runs" / "hafnia"
 DEFAULT_EXPORTS_DIR = PROJECT_ROOT / "runs" / "xprotect"
+DEFAULT_PLAYBACK_CACHE_DIR = PROJECT_ROOT / "runs" / "playback"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -45,6 +46,9 @@ class Settings:
     prompt_path: Path = DEFAULT_PROMPT_PATH
     runs_dir: Path = DEFAULT_RUNS_DIR
     exports_dir: Path = DEFAULT_EXPORTS_DIR
+    playback_cache_dir: Path = DEFAULT_PLAYBACK_CACHE_DIR
+    playback_retention_hours: int = 24
+    playback_transcode_threads: int = 1
 
     @classmethod
     def from_env(cls, env_file: Path | str | None = None) -> Settings:
@@ -69,6 +73,11 @@ class Settings:
             prompt_path=Path(os.getenv("DUMPING_PROMPT_PATH", str(DEFAULT_PROMPT_PATH))),
             runs_dir=Path(os.getenv("TRACEDUMP_RUNS_DIR", str(DEFAULT_RUNS_DIR))),
             exports_dir=Path(os.getenv("TRACEDUMP_EXPORTS_DIR", str(DEFAULT_EXPORTS_DIR))),
+            playback_cache_dir=Path(
+                os.getenv("TRACEDUMP_PLAYBACK_CACHE_DIR", str(DEFAULT_PLAYBACK_CACHE_DIR))
+            ),
+            playback_retention_hours=int(os.getenv("TRACEDUMP_PLAYBACK_RETENTION_HOURS", "24")),
+            playback_transcode_threads=int(os.getenv("TRACEDUMP_PLAYBACK_TRANSCODE_THREADS", "1")),
         )
 
 

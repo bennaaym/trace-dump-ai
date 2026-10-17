@@ -4,6 +4,8 @@ export type ReviewStatus =
 export type IncidentClassification =
   "static_dumping" | "dynamic_dumping" | "unknown_dumping";
 export type EvidenceRole = "before" | "event" | "after" | "representative";
+export type PlaybackStatus =
+  "available" | "preparing" | "unavailable" | "failed" | "expired";
 
 export interface CameraRecord {
   id: string;
@@ -25,6 +27,7 @@ interface EvidenceRecord {
   offsetSeconds: number | null;
   sha256: string | null;
   extractionMethod: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface IncidentListItem {
@@ -44,12 +47,18 @@ export interface IncidentListItem {
 }
 
 export interface IncidentDetail extends IncidentListItem {
+  viewer: {
+    id: string;
+    email: string | null;
+    role: "operator" | "admin";
+  };
   detection: {
     activityStartAt: string;
     activityEndAt: string;
     recordingStartAt: string;
     recordingEndAt: string;
-    metadata: Record<string, unknown>;
+    recordingUri: string;
+    technicalMetadata: Record<string, unknown> | null;
   };
   analysis: {
     id: string;
@@ -64,6 +73,24 @@ export interface IncidentDetail extends IncidentListItem {
     uncertainty: string | null;
     startedAt: string | null;
     completedAt: string | null;
+    investigation: {
+      sequenceOfEvents: string | null;
+      peopleInvolved: string | null;
+      vehiclesInvolved: string | null;
+      objectsInvolved: string | null;
+      visualEvidence: string | null;
+      uncertainties: string | null;
+    };
+    investigationResponseAvailable: boolean;
+    rawResponse: string | null;
+  };
+  playback: {
+    status: PlaybackStatus;
+    durationSeconds: number | null;
+    requestedAt: string | null;
+    completedAt: string | null;
+    retentionExpiresAt: string | null;
+    errorCode: string | null;
   };
   evidence: EvidenceRecord[];
   reviews: Array<{
@@ -72,6 +99,7 @@ export interface IncidentDetail extends IncidentListItem {
     decision: Exclude<ReviewStatus, "pending_review">;
     notes: string | null;
     createdAt: string;
+    reviewerLabel: string;
   }>;
 }
 

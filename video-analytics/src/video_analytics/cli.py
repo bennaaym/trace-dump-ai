@@ -14,12 +14,13 @@ from typing import Any
 
 from .config import Settings, load_prompt
 from .db.cameras import CameraSyncError, SupabaseCameraRepository, sync_cameras
-from .db.client import SupabaseClient
+from .db.client import SupabaseClient, SupabaseError
 from .db.persistence import PendingSyncStore, SupabaseAnalysisRepository
 from .detection.activity import ActivityDetector, DetectorConfig, write_json_atomic
 from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
+from .workers.playback import PlaybackWorker
 from .xprotect.client import (
     XProtectClient,
     XProtectError,
@@ -529,7 +530,46 @@ def build_parser() -> argparse.ArgumentParser:
         default="mip",
         help="live source (default: MIP JPEGLiveSource; REST is a low-rate diagnostic fallback)",
     )
+    playback = sub.add_parser(
+        "playback-worker",
+        help="prepare queued private incident recordings without blocking camera monitoring",
+    )
+    playback.add_argument(
+        "--once",
+        action="store_true",
+        help="process at most one queued recording and exit",
+    )
+    playback.add_argument(
+        "--poll-interval",
+        type=float,
+        default=5.0,
+        help="queue polling interval in seconds",
+    )
     return parser
+
+
+def command_playback_worker(settings: Settings, args: argparse.Namespace) -> int:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+    if not settings.xprotect_username or not settings.xprotect_password:
+        raise RuntimeError("XPROTECT_USERNAME and XPROTECT_PASSWORD are required")
+    worker = PlaybackWorker(
+        SupabaseClient(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            timeout=settings.request_timeout,
+        ),
+        xprotect_server=settings.xprotect_base_url,
+        cache_root=settings.playback_cache_dir,
+        retention_hours=settings.playback_retention_hours,
+        transcode_threads=settings.playback_transcode_threads,
+    )
+    if args.once:
+        processed = worker.process_once()
+        print(json.dumps({"processed": processed}))
+        return 0
+    worker.run(poll_seconds=args.poll_interval)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -548,6 +588,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_export(settings, args)
         if args.command == "monitor":
             return command_monitor(settings, args)
+        if args.command == "playback-worker":
+            return command_playback_worker(settings, args)
         return command_analyze(settings, args)
     except (
         ValueError,
@@ -558,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
         FrameAcquisitionError,
         MipLiveError,
         CameraSyncError,
+        SupabaseError,
         OSError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)

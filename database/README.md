@@ -1,6 +1,6 @@
 # TraceDump AI database
 
-This directory owns the Supabase PostgreSQL schema, Row Level Security policies, private evidence bucket, and operator review workflow. The migrations define exactly six application tables and do not contain seed incidents or production credentials.
+This directory owns the Supabase PostgreSQL schema, Row Level Security policies, private evidence and recording buckets, and operator review workflow. The migrations do not contain seed incidents or production credentials.
 
 ## Entities and relationships
 
@@ -10,7 +10,8 @@ cameras
         |-- analyses (zero or many attempts)
         `-- incidents (zero or one)
               |-- evidence (zero or many assets)
-              `-- incident_reviews (append-only history)
+              |-- incident_reviews (append-only history)
+              `-- incident_recordings (zero or one on-demand derivative)
 ```
 
 - `cameras` uses the XProtect camera GUID as its primary key. Coordinates are paired and range-checked. `status` records observed connectivity only; no inference is made from demo camera names.
@@ -19,6 +20,7 @@ cameras
 - `incidents` stores one suspected event per detection. An insert trigger requires a completed positive analysis for the same detection, verifies classification consistency, forces the initial `pending_review` state, and snapshots the camera coordinates.
 - `evidence` stores metadata and a private Storage object path, never image bytes. Any number of roles may exist, and no three-image assumption is enforced.
 - `incident_reviews` stores append-only operator actions. Updating or deleting a review raises an error.
+- `incident_recordings` stores the preparation state and provenance of an operator-requested browser-compatible derivative. Its unique incident key, recording identity, and worker lease suppress duplicate exports.
 
 Foreign keys use `RESTRICT`, so ordinary deletes cannot cascade through investigation history. IDs default to random UUIDs, but the future worker integration should reuse the worker's persisted activity-session UUID on retries or derive a stable UUID when replaying an artifact. The unique Hafnia summary ID, one-incident-per-detection constraint, and unique evidence object path provide additional idempotency boundaries.
 
@@ -64,11 +66,14 @@ Call the transactional RPC as an authenticated operator:
 select public.review_incident(
     p_incident_id := '00000000-0000-0000-0000-000000000000'::uuid,
     p_decision := 'confirmed',
-    p_notes := 'Visible object abandonment confirmed.'
+    p_notes := 'Visible object abandonment confirmed.',
+    p_expected_status := 'pending_review'
 );
 ```
 
 The function derives `reviewer_id` from `auth.uid()`, locks the incident, inserts an append-only audit row, and updates `incidents.review_status` in the same transaction. A client-supplied reviewer ID is never accepted.
+The expected status prevents a stale browser session from overwriting a newer
+operator decision. Changes after the initial review require a non-empty reason.
 
 ## Evidence Storage
 
@@ -79,6 +84,20 @@ incidents/<incident-id>/<asset-id>-event.jpg
 ```
 
 The database requires the path to remain under its incident prefix and globally unique. Only the trusted worker uploads originals, with Storage upsert disabled. Operators use authenticated downloads or short-lived signed URLs. No browser update/delete policy exists, so originals are immutable in normal operator workflows. Annotated derivatives must use separate objects and metadata rather than replacing originals.
+
+## Incident recording playback
+
+Migration `20261017141000_create_incident_recordings.sql` creates the private
+`incident-recordings` bucket and an on-demand queue. Operators can request only
+an existing incident and read only an unexpired object associated with an
+available recording row. The browser never supplies a camera ID, time interval,
+recording URI, or Storage path.
+
+The service-role playback worker claims one row with `FOR UPDATE SKIP LOCKED`,
+exports the exact detection interval, creates and validates an H.264 MP4,
+uploads it privately, and records hashes and provenance. Cached objects and
+incident-scoped local exports are removed after the configured retention
+deadline. Repeated or concurrent requests reuse the same row and derivative.
 
 ## Next.js access
 
@@ -94,6 +113,8 @@ Canonical migrations live in `database/migrations/` and apply in timestamp order
 4. Private Storage bucket and object-read policy.
 5. Transactional incident review workflow.
 6. A narrowly scoped bootstrap operator assignment for the initial investigator.
+7. Safe investigation-response access and concurrency-aware review transitions.
+8. On-demand private incident-recording queue, worker lease, and Storage policy.
 
 The Supabase CLI does **not** automatically discover this custom directory; it reads `supabase/migrations/`. For local validation, stage exact copies into a CLI project and treat this directory as canonical:
 

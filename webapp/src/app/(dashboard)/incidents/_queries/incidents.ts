@@ -28,7 +28,6 @@ interface IncidentRow {
 
 export interface IncidentFilters {
   q?: string;
-  classification?: string;
   status?: string;
   camera?: string;
   from?: string;
@@ -54,9 +53,6 @@ export async function getIncidents(
     .order("occurred_at", { ascending: false, nullsFirst: false })
     .range(from, to);
 
-  if (isClassification(filters.classification)) {
-    query = query.eq("classification", filters.classification);
-  }
   if (isReviewStatus(filters.status)) {
     query = query.eq("review_status", filters.status);
   }
@@ -182,14 +178,6 @@ function mapIncident(
     camera: row.detection.camera,
     thumbnailUrl,
   };
-}
-
-function isClassification(
-  value: string | undefined,
-): value is IncidentClassification {
-  return ["static_dumping", "dynamic_dumping", "unknown_dumping"].includes(
-    value ?? "",
-  );
 }
 
 function isReviewStatus(value: string | undefined): value is ReviewStatus {

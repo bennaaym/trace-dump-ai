@@ -35,6 +35,21 @@ Copy `.env.example` to `.env` and fill in local credentials. Process environment
 
 The MIP live/export bridges compile their small C# sources on demand using the Windows .NET Framework compiler and assemblies from `XPROTECT_MIPSDK_DIR`. Generated executables are ignored by Git. Recording validation also requires `ffprobe` on `PATH`.
 
+## On-demand incident playback
+
+Run `video-analytics playback-worker` as a separate low-priority process after
+applying the incident-recordings migration. The web application queues only
+recordings explicitly requested by an authorized operator. The worker claims
+one incident at a time, exports its persisted XProtect interval, converts it to
+H.264/yuv420p fast-start MP4 with a bounded ffmpeg thread count, validates the
+duration, and uploads it to the private `incident-recordings` bucket.
+
+Cached derivatives expire after `TRACEDUMP_PLAYBACK_RETENTION_HOURS` (24 by
+default). Before claiming work, the worker removes expired private Storage
+objects and their incident-scoped local export directory. Provenance hashes
+and conversion metadata remain in PostgreSQL. Original MIP exports are never
+served directly to browsers.
+
 ## Commands
 
 ```powershell

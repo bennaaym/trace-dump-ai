@@ -11,10 +11,7 @@ import {
   SectionHeading,
 } from "../../_components/page-elements";
 import { formatDateTime } from "../../_lib/format";
-import {
-  ClassificationBadge,
-  ReviewStatusBadge,
-} from "../../incidents/_components/incident-status";
+import { ReviewStatusBadge } from "../../incidents/_components/incident-status";
 import { getCamera } from "../_queries/cameras";
 
 export const metadata: Metadata = { title: "Camera Detail" };
@@ -131,7 +128,9 @@ export default async function CameraDetailPage({
                   className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50"
                 >
                   <div>
-                    <ClassificationBadge value={incident.classification} />
+                    <p className="text-xs font-semibold text-slate-700">
+                      Incident {incident.id.slice(0, 8)}
+                    </p>
                     <p className="mt-1 text-[10px] text-slate-400">
                       {formatDateTime(incident.occurred_at)}
                     </p>

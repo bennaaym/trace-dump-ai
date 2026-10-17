@@ -5,10 +5,7 @@ import { ChevronRight, ImageOff, Search } from "lucide-react";
 
 import { EmptyState, PageHeader } from "../_components/page-elements";
 import { formatDateTime, shortId } from "../_lib/format";
-import {
-  ClassificationBadge,
-  ReviewStatusBadge,
-} from "./_components/incident-status";
+import { ReviewStatusBadge } from "./_components/incident-status";
 import { getIncidents } from "./_queries/incidents";
 
 export const metadata: Metadata = { title: "Incidents" };
@@ -21,7 +18,6 @@ export default async function IncidentsPage({
   const params = await searchParams;
   const filters = {
     q: stringValue(params.q),
-    classification: stringValue(params.classification),
     status: stringValue(params.status),
     camera: stringValue(params.camera),
     from: stringValue(params.from),
@@ -29,6 +25,7 @@ export default async function IncidentsPage({
   };
   const data = await getIncidents(filters);
   const totalPages = Math.max(1, Math.ceil(data.count / data.pageSize));
+  const returnTo = incidentsListUrl(params);
   return (
     <>
       <PageHeader
@@ -36,7 +33,7 @@ export default async function IncidentsPage({
         description="Search, filter and investigate AI-generated suspected dumping events."
       />
       <form
-        className="mb-4 grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(4,160px)_auto]"
+        className="mb-4 grid gap-3 rounded-xl border bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_repeat(3,160px)_auto]"
         action="/incidents"
       >
         <label className="relative">
@@ -50,20 +47,20 @@ export default async function IncidentsPage({
           />
         </label>
         <Filter
-          name="classification"
-          label="All classifications"
-          options={["static_dumping", "dynamic_dumping", "unknown_dumping"]}
-          value={params.classification}
-        />
-        <Filter
           name="status"
-          label="All review statuses"
+          label="All incident statuses"
           options={[
             "pending_review",
             "confirmed",
             "dismissed",
             "needs_investigation",
           ]}
+          optionLabels={{
+            pending_review: "Suspected dumping",
+            confirmed: "Confirmed incident",
+            dismissed: "Dismissed",
+            needs_investigation: "Needs investigation",
+          }}
           value={params.status}
         />
         <Filter
@@ -98,7 +95,7 @@ export default async function IncidentsPage({
                   "Incident",
                   "Camera",
                   "Date & time",
-                  "Review status",
+                  "Incident status",
                   "",
                 ].map((column) => (
                   <th className="px-4 py-3 font-semibold" key={column}>
@@ -126,8 +123,7 @@ export default async function IncidentsPage({
                     </div>
                   </td>
                   <td className="max-w-sm px-4 py-3">
-                    <ClassificationBadge value={incident.classification} />
-                    <p className="mt-1 truncate text-slate-500">
+                    <p className="truncate font-semibold text-slate-700">
                       {incident.description}
                     </p>
                     <p className="mt-1 font-mono text-[10px] text-slate-400">
@@ -156,7 +152,12 @@ export default async function IncidentsPage({
                   <td className="px-4 py-3 text-right">
                     <Link
                       aria-label={`Open incident ${incident.id}`}
-                      href={`/incidents/${incident.id}`}
+                      href={
+                        "/incidents/" +
+                        incident.id +
+                        "?returnTo=" +
+                        encodeURIComponent(returnTo)
+                      }
                       className="inline-grid size-8 place-items-center rounded-lg hover:bg-slate-100"
                     >
                       <ChevronRight className="size-4" />
@@ -267,4 +268,15 @@ function PageLink({
 
 function stringValue(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function incidentsListUrl(
+  params: Record<string, string | string[] | undefined>,
+) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string") query.set(key, value);
+  }
+  const value = query.toString();
+  return value ? "/incidents?" + value : "/incidents";
 }

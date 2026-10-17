@@ -5,9 +5,15 @@ import type {
   IncidentDetail,
   ReviewStatus,
 } from "../../../_lib/types";
+import { normalizeHafniaResponse } from "../_lib/hafnia-response";
+import { sanitizeDetectorMetadata } from "../_lib/technical-metadata";
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function getIncident(id: string): Promise<IncidentDetail | null> {
-  const { supabase } = await authenticatedClient();
+  if (!UUID.test(id)) return null;
+  const { supabase, user } = await authenticatedClient();
   const { data: incident, error } = await supabase
     .from("incidents")
     .select(
@@ -23,7 +29,7 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       supabase
         .from("detections")
         .select(
-          "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,metadata",
+          "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,recording_uri,metadata",
         )
         .eq("id", incident.detection_id)
         .single(),
@@ -37,7 +43,7 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       supabase
         .from("evidence")
         .select(
-          "id,role,storage_path,captured_at,offset_seconds,sha256,extraction_method",
+          "id,role,storage_path,captured_at,offset_seconds,sha256,extraction_method,metadata",
         )
         .eq("incident_id", id)
         .order("offset_seconds"),
@@ -73,6 +79,36 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
     evidenceRows.map((item) => item.storage_path),
   );
   const analysis = analysisResult.data!;
+  const viewerRole = user.app_metadata.trace_dump_role;
+  if (viewerRole !== "operator" && viewerRole !== "admin") {
+    throw new Error("Operator authorization is required.");
+  }
+  const { data: responseText, error: responseError } = await supabase.rpc(
+    "get_analysis_investigation_response",
+    { p_analysis_id: analysis.id },
+  );
+  if (
+    responseError &&
+    responseError.code !== "PGRST202" &&
+    responseError.code !== "42883"
+  ) {
+    throw new Error("Unable to load the structured AI investigation response.");
+  }
+  const { data: playbackRows, error: playbackError } = await supabase.rpc(
+    "get_incident_recording_access",
+    { p_incident_id: id },
+  );
+  if (
+    playbackError &&
+    playbackError.code !== "PGRST202" &&
+    playbackError.code !== "42883"
+  ) {
+    throw new Error("Unable to load incident playback state.");
+  }
+  const playback = Array.isArray(playbackRows) ? playbackRows[0] : null;
+  const playbackExpired =
+    playback?.retention_expires_at &&
+    Date.parse(playback.retention_expires_at) <= Date.now();
   return {
     id: incident.id,
     detectionId: incident.detection_id,
@@ -85,6 +121,11 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
     latitude: incident.latitude,
     longitude: incident.longitude,
     locationSource: incident.location_source as "real" | "simulated",
+    viewer: {
+      id: user.id,
+      email: user.email ?? null,
+      role: viewerRole,
+    },
     camera: { id: camera.id, name: camera.name },
     thumbnailUrl: null,
     detection: {
@@ -92,7 +133,13 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       activityEndAt: detection.activity_end_at,
       recordingStartAt: detection.recording_start_at,
       recordingEndAt: detection.recording_end_at,
-      metadata: (detection.metadata ?? {}) as Record<string, unknown>,
+      recordingUri: detection.recording_uri,
+      technicalMetadata:
+        viewerRole === "admin"
+          ? sanitizeDetectorMetadata(
+              (detection.metadata ?? {}) as Record<string, unknown>,
+            )
+          : null,
     },
     analysis: {
       id: analysis.id,
@@ -109,6 +156,24 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       uncertainty: analysis.uncertainty,
       startedAt: analysis.started_at,
       completedAt: analysis.completed_at,
+      investigation: normalizeHafniaResponse(
+        responseError ? null : responseText,
+      ),
+      investigationResponseAvailable: !responseError && Boolean(responseText),
+      rawResponse:
+        viewerRole === "admin" && !responseError ? responseText : null,
+    },
+    playback: {
+      status: playbackExpired
+        ? "expired"
+        : playback?.status === "pending"
+          ? "preparing"
+          : (playback?.status ?? "unavailable"),
+      durationSeconds: playback?.duration_seconds ?? null,
+      requestedAt: playback?.requested_at ?? null,
+      completedAt: playback?.completed_at ?? null,
+      retentionExpiresAt: playback?.retention_expires_at ?? null,
+      errorCode: playback?.error_code ?? null,
     },
     evidence: evidenceRows.map((item) => ({
       id: item.id,
@@ -119,6 +184,7 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       offsetSeconds: item.offset_seconds,
       sha256: item.sha256,
       extractionMethod: item.extraction_method,
+      metadata: (item.metadata ?? {}) as Record<string, unknown>,
     })),
     reviews: (reviewsResult.data ?? []).map((review) => ({
       id: review.id,
@@ -126,6 +192,10 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
       decision: review.decision as Exclude<ReviewStatus, "pending_review">,
       notes: review.notes,
       createdAt: review.created_at,
+      reviewerLabel:
+        review.reviewer_id === user.id
+          ? (user.email ?? "Current operator")
+          : `Operator ${review.reviewer_id.slice(0, 8)}`,
     })),
   };
 }

@@ -5,10 +5,7 @@ import { ClipboardCheck, ImageOff } from "lucide-react";
 
 import { EmptyState, PageHeader } from "../_components/page-elements";
 import { formatDateTime } from "../_lib/format";
-import {
-  ClassificationBadge,
-  ReviewStatusBadge,
-} from "../incidents/_components/incident-status";
+import { ReviewStatusBadge } from "../incidents/_components/incident-status";
 import { getReviewQueue } from "./_queries/review";
 
 export const metadata: Metadata = { title: "Review Queue" };
@@ -47,10 +44,7 @@ export default async function ReviewPage() {
                   )}
                 </div>
                 <div>
-                  <div className="flex flex-wrap gap-2">
-                    <ClassificationBadge value={incident.classification} />
-                    <ReviewStatusBadge value={incident.reviewStatus} />
-                  </div>
+                  <ReviewStatusBadge value={incident.reviewStatus} />
                   <p className="mt-2 text-xs text-slate-600">
                     {incident.camera.name} ·{" "}
                     {formatDateTime(incident.occurredAt)}

@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 
 import { authenticatedClient } from "../../_lib/data";
+import type { ReviewStatus } from "../../_lib/types";
 
 export async function getReports() {
   await connection();
@@ -13,7 +14,7 @@ export async function getReports() {
       .gte("created_at", since),
     supabase
       .from("incidents")
-      .select("id,detection_id,classification,review_status,occurred_at")
+      .select("id,detection_id,review_status,occurred_at")
       .gte("created_at", since),
     supabase
       .from("incident_reviews")
@@ -24,20 +25,13 @@ export async function getReports() {
   if (detections.error || incidents.error || reviews.error || cameras.error)
     throw new Error("Unable to load report statistics.");
   const incidentRows = incidents.data ?? [];
-  const byClassification = [
-    "dynamic_dumping",
-    "static_dumping",
-    "unknown_dumping",
-  ].map((key) => ({
-    key,
-    count: incidentRows.filter((row) => row.classification === key).length,
-  }));
-  const byStatus = [
+  const statuses: ReviewStatus[] = [
     "pending_review",
     "needs_investigation",
     "confirmed",
     "dismissed",
-  ].map((key) => ({
+  ];
+  const byStatus = statuses.map((key) => ({
     key,
     count: incidentRows.filter((row) => row.review_status === key).length,
   }));
@@ -66,7 +60,12 @@ export async function getReports() {
   }
   return {
     detectionCount: detections.count ?? 0,
-    incidentCount: incidentRows.length,
+    suspectedCount: incidentRows.filter(
+      (row) => row.review_status === "pending_review",
+    ).length,
+    investigationCount: incidentRows.filter(
+      (row) => row.review_status === "needs_investigation",
+    ).length,
     confirmedCount: incidentRows.filter(
       (row) => row.review_status === "confirmed",
     ).length,
@@ -74,7 +73,6 @@ export async function getReports() {
       (row) => row.review_status === "dismissed",
     ).length,
     reviewCount: reviews.count ?? 0,
-    byClassification,
     byStatus,
     byDay,
     byCamera: [...cameraCounts].map(([cameraId, value]) => ({
