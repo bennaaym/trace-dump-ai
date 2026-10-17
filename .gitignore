@@ -35,6 +35,8 @@ artifacts/
 exports/
 recordings/
 evidence/
+!video-analytics/src/video_analytics/evidence/
+!video-analytics/src/video_analytics/evidence/*.py
 *.mp4
 *.avi
 *.mov
@@ -46,6 +48,8 @@ evidence/
 *.engine
 *.weights
 video-analytics/src/video_analytics/xprotect/*_helper/*.exe
+video-analytics/src/video_analytics/xprotect/mip_live/*.exe
+video-analytics/src/video_analytics/xprotect/mip_exporter/*.exe
 
 # Logs and temporary files
 *.log

@@ -9,6 +9,37 @@ from video_analytics.workers.incident_pipeline import (
     parse_dumping_response,
 )
 
+
+class RecordingRepository:
+    def __init__(self):
+        self.operations = []
+
+    def queue(self, operation):
+        self.operations.append(operation)
+
+    def flush(self):
+        return {"synced": 0, "pending": len(self.operations), "error": None}
+
+
+class NegativeHafnia:
+    def __init__(self):
+        self.requests = 0
+
+    def create_summary(self, prompt, uri, model):
+        self.requests += 1
+        return {"Prompt": prompt}, {
+            "Id": "11111111-1111-1111-1111-111111111111",
+            "Progress": "Pending",
+        }
+
+    def wait_for_summary(self, summary_id, **kwargs):
+        return {
+            "Id": summary_id,
+            "Progress": "Completed",
+            "Response": "Dumping detected: No\nDumping type: Unknown\nEvent timestamp: Unknown",
+        }
+
+
 CAMERA_ID = "baaba7e1-7e9d-4732-8f46-6612ffc9df1e"
 SESSION = {
     "id": "session-1",
@@ -84,6 +115,7 @@ def test_failed_pre_submission_can_retry_but_failed_submitted_request_is_suppres
 
 def test_positive_incident_is_preserved_when_evidence_export_fails(tmp_path: Path, monkeypatch):
     store = SimulationStateStore(tmp_path / "state.json")
+    repository = RecordingRepository()
     pipeline = IncidentPipeline(
         server="http://localhost",
         camera=Camera(CAMERA_ID, "TD-DYN-01-Chartrons"),
@@ -96,6 +128,7 @@ def test_positive_incident_is_preserved_when_evidence_export_fails(tmp_path: Pat
         state_store=store,
         poll_interval=0,
         poll_timeout=1,
+        repository=repository,
     )
     monkeypatch.setattr(
         "video_analytics.workers.incident_pipeline.run_mip_export",
@@ -118,3 +151,54 @@ def test_positive_incident_is_preserved_when_evidence_export_fails(tmp_path: Pat
     assert incident["review_status"] == "pending_review"
     assert incident["evidence_status"] == "failed"
     assert "export failed" in incident["evidence_error"]
+    incident_inserts = [
+        operation
+        for operation in repository.operations
+        if operation.get("kind") == "insert" and operation.get("table") == "incidents"
+    ]
+    assert len(incident_inserts) == 1
+    assert incident_inserts[0]["values"]["review_status"] == "pending_review"
+    assert incident_inserts[0]["values"]["classification"] == "dynamic_dumping"
+
+
+def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppressed(tmp_path: Path):
+    store = SimulationStateStore(tmp_path / "state.json")
+    repository = RecordingRepository()
+    hafnia = NegativeHafnia()
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "TD-DYN-01-Chartrons"),
+        hafnia=hafnia,
+        prompt="synthetic test prompt",
+        prompt_version="dumping_v1",
+        model_id="traffic-general",
+        runs_root=tmp_path,
+        simulation_run_id="synthetic-negative-run",
+        state_store=store,
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+    )
+
+    first = pipeline.process([SESSION], 1)
+    second = pipeline.process([{**SESSION, "id": "new-loop-session"}], 1)
+
+    assert first["requests_submitted"] == 1
+    assert first["results"][0]["classification"]["classification"] == "no"
+    assert second["requests_submitted"] == 0
+    assert second["repeat_sessions_suppressed"] == 1
+    assert hafnia.requests == 1
+    inserts = [
+        operation.get("table")
+        for operation in repository.operations
+        if operation["kind"] == "insert"
+    ]
+    assert inserts.count("detections") == 1
+    assert inserts.count("analyses") == 1
+    assert "incidents" not in inserts
+    completed = [
+        operation
+        for operation in repository.operations
+        if operation["kind"] == "update" and operation["key"].endswith(":completed")
+    ]
+    assert completed[0]["values"]["dumping_detected"] == "no"

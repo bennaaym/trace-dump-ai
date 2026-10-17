@@ -57,6 +57,7 @@ def build_export_helper(
         raise VideoExportError("The .NET Framework C# compiler was not found")
     if HELPER_EXE.is_file() and HELPER_EXE.stat().st_mtime >= HELPER_SOURCE.stat().st_mtime:
         return HELPER_EXE
+    HELPER_EXE.parent.mkdir(parents=True, exist_ok=True)
     command = [
         str(compiler),
         "/nologo",

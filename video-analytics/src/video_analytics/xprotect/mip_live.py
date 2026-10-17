@@ -35,6 +35,7 @@ def build_live_helper(*, runner=subprocess.run) -> Path:
         raise MipLiveError("The .NET Framework C# compiler was not found")
     if HELPER_EXE.is_file() and HELPER_EXE.stat().st_mtime >= HELPER_SOURCE.stat().st_mtime:
         return HELPER_EXE
+    HELPER_EXE.parent.mkdir(parents=True, exist_ok=True)
     command = [
         str(compiler),
         "/nologo",

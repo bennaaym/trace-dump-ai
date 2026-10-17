@@ -14,6 +14,8 @@ import requests
 from video_analytics.models import Camera
 from video_analytics.xprotect.positioning import CameraPosition, parse_camera_position
 
+from .client import SupabaseClient, SupabaseError
+
 logger = logging.getLogger(__name__)
 
 _ENABLED_LOCATIONS = frozenset(
@@ -80,48 +82,29 @@ class SupabaseCameraRepository:
         timeout: float = 60.0,
         session: requests.Session | None = None,
     ) -> None:
-        if not base_url.strip():
-            raise ValueError("SUPABASE_URL is required")
-        if not service_role_key.strip():
-            raise ValueError("SUPABASE_SERVICE_ROLE_KEY is required")
-        self._url = f"{base_url.rstrip('/')}/rest/v1/cameras"
-        self._timeout = timeout
-        self._session = session or requests.Session()
-        self._headers = {
-            "apikey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
+        self._client = SupabaseClient(base_url, service_role_key, timeout=timeout, session=session)
 
     def list_cameras(self) -> list[dict[str, Any]]:
         try:
-            response = self._session.get(
-                self._url,
-                headers=self._headers,
-                params={"select": _SELECT_FIELDS},
-                timeout=self._timeout,
+            payload = self._client.request(
+                "GET", "/rest/v1/cameras", params={"select": _SELECT_FIELDS}
             )
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError) as exc:
+        except (SupabaseError, ValueError) as exc:
             raise CameraSyncError(f"Supabase camera read failed: {exc}") from exc
         if not isinstance(payload, list):
             raise CameraSyncError("Supabase camera read returned an unexpected payload")
         return payload
 
     def upsert_camera(self, values: dict[str, Any]) -> None:
-        headers = {**self._headers, "Prefer": "resolution=merge-duplicates,return=minimal"}
         try:
-            response = self._session.post(
-                self._url,
-                headers=headers,
+            self._client.request(
+                "POST",
+                "/rest/v1/cameras",
+                headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
                 params={"on_conflict": "id"},
                 json=values,
-                timeout=self._timeout,
             )
-            response.raise_for_status()
-        except requests.RequestException as exc:
+        except SupabaseError as exc:
             raise CameraSyncError(f"Supabase camera upsert failed: {exc}") from exc
 
 

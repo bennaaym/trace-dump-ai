@@ -14,6 +14,8 @@ from typing import Any
 
 from .config import Settings, load_prompt
 from .db.cameras import CameraSyncError, SupabaseCameraRepository, sync_cameras
+from .db.client import SupabaseClient
+from .db.persistence import PendingSyncStore, SupabaseAnalysisRepository
 from .detection.activity import ActivityDetector, DetectorConfig, write_json_atomic
 from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
@@ -363,6 +365,20 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
         output = run_directory / "report.json"
         phase_result: dict[str, Any] | None = None
         if hafnia_enabled:
+            if not settings.supabase_url:
+                raise RuntimeError("Missing configuration; set SUPABASE_URL")
+            if not settings.supabase_service_role_key:
+                raise RuntimeError("Missing credential; set SUPABASE_SERVICE_ROLE_KEY")
+            repository = SupabaseAnalysisRepository(
+                SupabaseClient(
+                    settings.supabase_url,
+                    settings.supabase_service_role_key,
+                    timeout=settings.request_timeout,
+                ),
+                PendingSyncStore(
+                    settings.exports_dir.parent / "state" / "pending_supabase_sync.json"
+                ),
+            )
             pipeline = IncidentPipeline(
                 server=settings.xprotect_base_url,
                 camera=camera,
@@ -377,6 +393,12 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
                 ),
                 poll_interval=settings.poll_interval,
                 poll_timeout=settings.poll_timeout,
+                repository=repository,
+                detector_metadata={
+                    "detector": "MOG2+YOLO",
+                    "detector_config": activity["detector_config"],
+                    "model_device": activity["model_device"],
+                },
             )
             phase_result = pipeline.process(activity["activity_sessions"], args.max_hafnia_requests)
         write_json_atomic(

@@ -6,11 +6,18 @@ import json
 import os
 import re
 import time
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from ..db.persistence import (
+    AnalysisRepository,
+    insert_operation,
+    occurred_at,
+    stable_id,
+    update_operation,
+    upload_operation,
+)
 from ..detection.activity import write_json_atomic
 from ..evidence import extract_evidence_frames
 from ..hafnia.client import HafniaClient, HafniaError
@@ -166,6 +173,8 @@ class IncidentPipeline:
         state_store: SimulationStateStore,
         poll_interval: float,
         poll_timeout: float,
+        repository: AnalysisRepository | None = None,
+        detector_metadata: dict[str, Any] | None = None,
     ) -> None:
         self.server = server
         self.camera = camera
@@ -178,17 +187,83 @@ class IncidentPipeline:
         self.state = state_store
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
+        self.repository = repository
+        self.detector_metadata = detector_metadata or {}
+
+    def _queue(self, operation: dict[str, Any]) -> None:
+        if self.repository is not None:
+            self.repository.queue(operation)
+
+    def _flush(self) -> dict[str, Any] | None:
+        return self.repository.flush() if self.repository is not None else None
+
+    def _record_ids(self, session: dict[str, Any]) -> tuple[str, str]:
+        detection_id = stable_id(
+            "detection",
+            self.simulation_run_id,
+            self.camera.id,
+        )
+        return detection_id, stable_id("analysis", detection_id, "hafnia-1")
+
+    def _queue_detection_and_analysis(self, session: dict[str, Any]) -> tuple[str, str]:
+        detection_id, analysis_id = self._record_ids(session)
+        metadata = {
+            "simulation_run_id": self.simulation_run_id,
+            "activity_session_id": session["id"],
+            "hit_count": session.get("hit_count"),
+            "actor_classes": session.get("actor_classes", []),
+            **self.detector_metadata,
+        }
+        self._queue(
+            insert_operation(
+                "detections",
+                {
+                    "id": detection_id,
+                    "camera_id": self.camera.id,
+                    "activity_start_at": session["activity_start_utc"],
+                    "activity_end_at": session["activity_end_utc"],
+                    "recording_start_at": session["recording_start_utc"],
+                    "recording_end_at": session["recording_end_utc"],
+                    "recording_uri": session["xprotect_uri"],
+                    "metadata": metadata,
+                },
+            )
+        )
+        self._queue(
+            insert_operation(
+                "analyses",
+                {
+                    "id": analysis_id,
+                    "detection_id": detection_id,
+                    "status": "pending",
+                    "prompt_version": self.prompt_version,
+                    "model_id": self.model_id,
+                },
+            )
+        )
+        self._flush()
+        return detection_id, analysis_id
 
     def process(self, sessions: list[dict[str, Any]], max_requests: int) -> dict[str, Any]:
+        initial_sync = self._flush()
         results: list[dict[str, Any]] = []
         requests_submitted = 0
         suppressed = 0
         for session in sessions:
             existing = self.state.get(self.simulation_run_id, self.camera.id)
             if existing and existing.get("status") == "submitted" and existing.get("summary_id"):
+                detection_id, analysis_id = self._record_ids(existing["session"])
                 try:
-                    result = self._finish(existing["session"], existing["summary_id"], None)
+                    result = self._finish(
+                        existing["session"],
+                        existing["summary_id"],
+                        None,
+                        detection_id,
+                        analysis_id,
+                    )
                 except Exception as exc:
+                    if not isinstance(exc, HafniaError):
+                        self._queue_analysis_failure(analysis_id, existing["summary_id"], exc)
                     self.state.update(
                         self.simulation_run_id,
                         self.camera.id,
@@ -203,6 +278,14 @@ class IncidentPipeline:
                     }
                 results.append(result)
                 continue
+            if requests_submitted >= max_requests:
+                results.append(
+                    {
+                        "status": "skipped",
+                        "reason": "maximum Hafnia request count reached",
+                    }
+                )
+                continue
             claimed, entry = self.state.reserve(self.simulation_run_id, self.camera.id, session)
             if not claimed:
                 suppressed += 1
@@ -214,30 +297,31 @@ class IncidentPipeline:
                     }
                 )
                 continue
-            if requests_submitted >= max_requests:
-                self.state.update(
-                    self.simulation_run_id,
-                    self.camera.id,
-                    status="failed",
-                    error="maximum Hafnia request count reached before submission",
-                )
-                results.append(
-                    {
-                        "status": "failed",
-                        "error": "maximum Hafnia request count reached before submission",
-                    }
-                )
-                continue
+            detection_id, analysis_id = self._queue_detection_and_analysis(session)
             end = validate_utc_timestamp(session["recording_end_utc"])
             wait_seconds = (end + timedelta(seconds=2) - datetime.now(UTC)).total_seconds()
             if wait_seconds > 0:
                 time.sleep(wait_seconds)
+            summary_id: str | None = None
             try:
                 request, created = self.hafnia.create_summary(
                     self.prompt, session["xprotect_uri"], self.model_id
                 )
                 requests_submitted += 1
                 summary_id = created["Id"]
+                self._queue(
+                    update_operation(
+                        "analyses",
+                        analysis_id,
+                        "processing",
+                        {
+                            "status": "processing",
+                            "hafnia_summary_id": summary_id,
+                            "started_at": _utc_now(),
+                        },
+                    )
+                )
+                self._flush()
                 self.state.update(
                     self.simulation_run_id,
                     self.camera.id,
@@ -251,8 +335,10 @@ class IncidentPipeline:
                 analysis_dir.mkdir(parents=True, exist_ok=True)
                 write_json_atomic(analysis_dir / "request.json", request)
                 write_json_atomic(analysis_dir / "created.json", created)
-                result = self._finish(session, summary_id, request)
+                result = self._finish(session, summary_id, request, detection_id, analysis_id)
             except Exception as exc:
+                if summary_id is None or not isinstance(exc, HafniaError):
+                    self._queue_analysis_failure(analysis_id, summary_id, exc)
                 self.state.update(
                     self.simulation_run_id,
                     self.camera.id,
@@ -266,10 +352,17 @@ class IncidentPipeline:
             "requests_submitted": requests_submitted,
             "repeat_sessions_suppressed": suppressed,
             "results": results,
+            "initial_database_sync": initial_sync,
+            "final_database_sync": self._flush(),
         }
 
     def _finish(
-        self, session: dict[str, Any], summary_id: str, request: dict[str, Any] | None
+        self,
+        session: dict[str, Any],
+        summary_id: str,
+        request: dict[str, Any] | None,
+        detection_id: str,
+        analysis_id: str,
     ) -> dict[str, Any]:
         analysis_dir = self.runs_root / "analyses" / re.sub(r"[^A-Za-z0-9_.-]", "_", summary_id)
         analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -277,11 +370,12 @@ class IncidentPipeline:
             response = self.hafnia.wait_for_summary(
                 summary_id, interval=self.poll_interval, timeout=self.poll_timeout
             )
-        except HafniaError:
+        except HafniaError as exc:
             try:
                 response = self.hafnia.get_summary(summary_id)
                 write_json_atomic(analysis_dir / "response.json", response)
             finally:
+                self._queue_analysis_failure(analysis_id, summary_id, exc, locals().get("response"))
                 raise
         write_json_atomic(analysis_dir / "response.json", response)
         raw_text = response.get("Response") or ""
@@ -299,11 +393,31 @@ class IncidentPipeline:
             "completed_at_utc": _utc_now(),
         }
         write_json_atomic(analysis_dir / "metadata.json", metadata)
+        completed_at = _utc_now()
+        self._queue(
+            update_operation(
+                "analyses",
+                analysis_id,
+                "completed",
+                {
+                    "status": "completed",
+                    "hafnia_summary_id": summary_id,
+                    "dumping_detected": parsed["classification"],
+                    "dumping_type": parsed["dumping_type"],
+                    "event_offset_seconds": parsed["event_offset_seconds"],
+                    "description": parsed["description"],
+                    "uncertainty": parsed["uncertainty"],
+                    "raw_response": response,
+                    "completed_at": completed_at,
+                },
+            )
+        )
+        self._flush()
         incident_path: str | None = None
         evidence_status = "not_requested"
         if parsed["classification"] == "yes":
             incident_path, evidence_status = self._create_incident(
-                session, summary_id, response, parsed, analysis_dir
+                session, summary_id, response, parsed, analysis_dir, detection_id, analysis_id
             )
         self.state.update(
             self.simulation_run_id,
@@ -322,7 +436,29 @@ class IncidentPipeline:
             "analysis_path": str(analysis_dir.resolve()),
             "incident_path": incident_path,
             "evidence_status": evidence_status,
+            "detection_id": detection_id,
+            "analysis_id": analysis_id,
+            "database_sync": self._flush(),
         }
+
+    def _queue_analysis_failure(
+        self,
+        analysis_id: str,
+        summary_id: str | None,
+        error: Exception,
+        response: dict[str, Any] | None = None,
+    ) -> None:
+        values: dict[str, Any] = {
+            "status": "failed",
+            "error_message": str(error),
+            "completed_at": _utc_now(),
+        }
+        if summary_id:
+            values["hafnia_summary_id"] = summary_id
+        if response is not None:
+            values["raw_response"] = response
+        self._queue(update_operation("analyses", analysis_id, "failed", values))
+        self._flush()
 
     def _create_incident(
         self,
@@ -331,8 +467,12 @@ class IncidentPipeline:
         response: dict[str, Any],
         parsed: dict[str, Any],
         analysis_dir: Path,
+        detection_id: str | None = None,
+        analysis_id: str | None = None,
     ) -> tuple[str, str]:
-        incident_id = str(uuid.uuid4())
+        if detection_id is None or analysis_id is None:
+            detection_id, analysis_id = self._record_ids(session)
+        incident_id = stable_id("incident", detection_id)
         incident_dir = self.runs_root / "incidents" / incident_id
         evidence_dir = incident_dir / "evidence"
         export_dir = analysis_dir / "xprotect_export"
@@ -372,7 +512,7 @@ class IncidentPipeline:
             "location_source": "simulated" if latitude is not None else None,
             "classification": f"{parsed['dumping_type']}_dumping"
             if parsed["dumping_type"] in {"static", "dynamic"}
-            else "dumping_unknown",
+            else "unknown_dumping",
             "review_status": "pending_review",
             "activity_start_utc": session["activity_start_utc"],
             "activity_end_utc": session["activity_end_utc"],
@@ -392,4 +532,45 @@ class IncidentPipeline:
             "created_at_utc": _utc_now(),
         }
         write_json_atomic(incident_dir / "incident.json", incident)
+        self._queue(
+            insert_operation(
+                "incidents",
+                {
+                    "id": incident_id,
+                    "detection_id": detection_id,
+                    "source_analysis_id": analysis_id,
+                    "classification": incident["classification"],
+                    "review_status": "pending_review",
+                    "description": parsed["description"],
+                    "uncertainty": parsed["uncertainty"],
+                    "occurred_at": occurred_at(
+                        session["recording_start_utc"], parsed["event_offset_seconds"]
+                    ),
+                    "location_source": "simulated",
+                },
+            )
+        )
+        for frame in evidence:
+            storage_path = f"incidents/{incident_id}/{frame['role']}.jpg"
+            self._queue(upload_operation(storage_path, frame["path"]))
+            self._queue(
+                insert_operation(
+                    "evidence",
+                    {
+                        "id": stable_id("evidence", incident_id, frame["role"]),
+                        "incident_id": incident_id,
+                        "role": frame["role"],
+                        "storage_path": storage_path,
+                        "captured_at": frame["timestamp_utc"],
+                        "offset_seconds": frame["offset_seconds"],
+                        "sha256": frame["sha256"],
+                        "extraction_method": frame["extraction_method"],
+                        "metadata": {
+                            "camera_recording_uri": frame["camera_recording_uri"],
+                            "simulation_run_id": self.simulation_run_id,
+                        },
+                    },
+                )
+            )
+        self._flush()
         return str((incident_dir / "incident.json").resolve()), evidence_status

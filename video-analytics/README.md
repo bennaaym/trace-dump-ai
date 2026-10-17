@@ -9,7 +9,7 @@ This package contains the migrated TraceDump worker for read-only XProtect acqui
 - `hafnia/`: gateway client and the versioned dumping prompt.
 - `evidence/`: before/event/after keyframe extraction from exported recordings.
 - `workers/`: quota-aware orchestration, deduplication state, and suspected-incident assembly.
-- `db/`: server-side Supabase persistence, including idempotent camera synchronization.
+- `db/`: server-side Supabase persistence, including idempotent camera synchronization and a durable pending-write outbox.
 
 Python 3.11 is the migration baseline. The package declares support through Python 3.13 and is validated here on Python 3.13.
 
@@ -48,6 +48,8 @@ video-analytics monitor --camera CAMERA --dry-run --duration 60 --fps 5 --detect
 ```
 
 `--camera` accepts a GUID, exact camera name, or the 1-based index from `cameras`. Monitoring requires `--dry-run` unless an explicit simulation run and positive Hafnia request cap are provided. AI-positive results are written as `pending_review`; they are not treated as confirmed incidents.
+
+For an analysis-enabled monitoring run, the worker journals deterministic detection and analysis records under `runs/state/pending_supabase_sync.json` before sending them to Supabase. Temporary database or Storage failures leave operations in that file for the next run. Positive analyses create one incident per detection and upload only extracted JPEG keyframes to the private `incident-evidence` bucket; exported recordings remain local.
 
 Camera synchronization reads GUID, display name, and `gisPoint` positioning metadata from XProtect. A dry run reads current Supabase rows so it can accurately show changes, but does not write. Initial monitoring defaults are applied only when a GUID is first inserted; later runs preserve the application-owned `enabled` and `status` fields. Cameras temporarily absent from discovery are left untouched.
 
