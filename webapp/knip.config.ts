@@ -8,8 +8,6 @@ const config: KnipConfig = {
     "src/components/ui/**/*.tsx",
   ],
   project: ["src/**/*.{ts,tsx,css}"],
-  // Installed by shadcn for registry components that use icons.
-  ignoreDependencies: ["lucide-react"],
 };
 
 export default config;
