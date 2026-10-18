@@ -18,6 +18,31 @@ export interface CameraRecord {
   lastSeenAt: string | null;
 }
 
+export interface OperationsIncident {
+  id: string;
+  cameraId: string;
+  reviewStatus: ReviewStatus;
+  occurredAt: string | null;
+  createdAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationSource: "real" | "simulated";
+}
+
+export interface OperationsCamera extends Omit<
+  CameraRecord,
+  "status" | "lastSeenAt"
+> {
+  lastDetectionAt: string | null;
+  incidentCount: number;
+  pendingIncidentCount: number;
+}
+
+export interface OperationsMapData {
+  cameras: OperationsCamera[];
+  incidents: OperationsIncident[];
+}
+
 interface EvidenceRecord {
   id: string;
   role: EvidenceRole;

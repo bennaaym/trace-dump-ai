@@ -133,7 +133,7 @@ export default async function IncidentsPage({
                   <td className="px-4 py-3">
                     <Link
                       className="font-semibold text-slate-800 hover:text-teal-700"
-                      href={`/cameras/${incident.camera.id}`}
+                      href={`/operations?camera=${encodeURIComponent(incident.camera.id)}`}
                     >
                       {incident.camera.name}
                     </Link>

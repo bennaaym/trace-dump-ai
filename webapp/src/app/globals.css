@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "leaflet/dist/leaflet.css";
 
 @theme inline {
   --color-background: var(--background);
@@ -103,6 +104,10 @@
     background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
     background-size: 200% 100%;
     animation: shimmer 1.6s infinite;
+  }
+  .camera-map-icon {
+    background: transparent;
+    border: 0;
   }
 }
 

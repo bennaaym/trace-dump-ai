@@ -7,7 +7,6 @@ import { useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   Bell,
-  Camera,
   ChartNoAxesCombined,
   ChevronDown,
   ChevronsLeft,
@@ -28,8 +27,7 @@ const navigation = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/incidents", label: "Incidents", icon: ShieldCheck },
   { href: "/review", label: "Review Queue", icon: ClipboardCheck },
-  { href: "/cameras", label: "Cameras", icon: Camera },
-  { href: "/map", label: "Map & Heatmap", icon: MapPinned },
+  { href: "/operations", label: "Operations Map", icon: MapPinned },
   { href: "/reports", label: "Reports", icon: ChartNoAxesCombined },
 ] as const;
 
