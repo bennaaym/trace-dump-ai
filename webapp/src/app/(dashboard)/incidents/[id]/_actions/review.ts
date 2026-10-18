@@ -56,7 +56,7 @@ export const reviewIncidentAction = actionClient
     revalidatePath(`/incidents/${parsedInput.incidentId}`);
     revalidatePath("/incidents");
     revalidatePath("/review");
-    revalidatePath("/overview");
+    revalidatePath("/operations");
     revalidatePath("/reports");
     return { success: true as const, error: null };
   });

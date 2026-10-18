@@ -15,10 +15,10 @@ export default function NotFound() {
           The requested TraceDump AI route does not exist.
         </p>
         <Link
-          href="/overview"
+          href="/operations"
           className="bg-primary mt-6 inline-flex rounded-lg px-4 py-2.5 text-sm font-semibold text-white"
         >
-          Return to overview
+          Return to Monitor
         </Link>
       </div>
     </main>

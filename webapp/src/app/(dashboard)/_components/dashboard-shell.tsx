@@ -6,16 +6,14 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
-  Bell,
   ChartNoAxesCombined,
   ChevronDown,
   ChevronsLeft,
   ClipboardCheck,
-  LayoutDashboard,
   LogOut,
   MapPinned,
   Menu,
-  Search,
+  Settings2,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -24,11 +22,10 @@ import { cn } from "@/lib/utils";
 import { logoutAction } from "../_actions/logout";
 
 const navigation = [
-  { href: "/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/operations", label: "Monitor", icon: MapPinned },
   { href: "/incidents", label: "Incidents", icon: ShieldCheck },
   { href: "/review", label: "Review Queue", icon: ClipboardCheck },
-  { href: "/operations", label: "Operations Map", icon: MapPinned },
-  { href: "/reports", label: "Reports", icon: ChartNoAxesCombined },
+  { href: "/reports", label: "Insights", icon: ChartNoAxesCombined },
 ] as const;
 
 export function DashboardShell({
@@ -105,20 +102,6 @@ export function DashboardShell({
           );
         })}
       </nav>
-      <div className="m-3 rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
-        <p className={cn("font-semibold text-white", collapsed && "lg:hidden")}>
-          Data source
-        </p>
-        <p className={cn("mt-1", collapsed && "lg:hidden")}>
-          Authenticated Supabase
-        </p>
-        <span
-          className={cn(
-            "mt-2 inline-flex size-2 rounded-full bg-emerald-400",
-            !collapsed && "hidden",
-          )}
-        />
-      </div>
     </>
   );
 
@@ -159,24 +142,7 @@ export function DashboardShell({
           >
             <Menu className="size-5" />
           </button>
-          <div className="relative hidden w-full max-w-xl sm:block">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-            <input
-              aria-label="Global search preview"
-              readOnly
-              placeholder="Use page filters to search incidents and cameras"
-              className="h-9 w-full rounded-lg border bg-slate-50 pr-3 pl-9 text-sm placeholder:text-slate-400"
-            />
-          </div>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              aria-label="Notifications unavailable"
-              title="Notifications are not connected"
-            >
-              <Bell className="size-5" />
-            </button>
             <div className="relative">
               <button
                 type="button"
@@ -189,9 +155,7 @@ export function DashboardShell({
                   {initials}
                 </span>
                 <span className="hidden max-w-48 text-left text-xs md:block">
-                  <strong className="block text-slate-700">
-                    Authenticated user
-                  </strong>
+                  <strong className="block text-slate-700">Investigator</strong>
                   <span className="block truncate text-slate-400">
                     {userEmail}
                   </span>
@@ -208,6 +172,14 @@ export function DashboardShell({
                       {userEmail}
                     </p>
                   </div>
+                  <Link
+                    href="/settings"
+                    onClick={() => setAccountOpen(false)}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    <Settings2 className="size-4" />
+                    Settings
+                  </Link>
                   <button
                     type="button"
                     disabled={isLoggingOut}

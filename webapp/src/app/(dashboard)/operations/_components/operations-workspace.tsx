@@ -140,12 +140,9 @@ export function OperationsWorkspace({
     <div className="mx-auto max-w-[1700px]">
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
-              Operations Map
-            </h1>
-            <Badge tone="warning">Simulated locations</Badge>
-          </div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
+            Monitor
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
             Monitor camera locations and suspected dumping activity across
             Bordeaux.
@@ -499,13 +496,6 @@ function OperationsMap({
         style={{ zIndex: 625 }}
         aria-hidden="true"
       />
-      <div className="pointer-events-none absolute top-3 left-3 z-[700] rounded-lg border bg-white/95 px-3 py-2 text-[11px] shadow-sm backdrop-blur">
-        <p className="font-semibold text-slate-700">Bordeaux operations area</p>
-        <p className="mt-0.5 text-slate-500">
-          {mappedCount} mapped · {cameras.length - mappedCount} without
-          coordinates
-        </p>
-      </div>
       {showHeatmap && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-[700] w-64 rounded-lg border bg-white/95 p-3 text-[10px] shadow-sm backdrop-blur">
           <p className="font-semibold text-slate-700">

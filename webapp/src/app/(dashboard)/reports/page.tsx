@@ -17,15 +17,15 @@ import {
 import { reviewStatusLabel } from "../_lib/format";
 import { getReports } from "./_queries/reports";
 
-export const metadata: Metadata = { title: "Reports" };
+export const metadata: Metadata = { title: "Insights" };
 
 export default async function ReportsPage() {
   const data = await getReports();
   return (
     <>
       <PageHeader
-        title="Reports"
-        description="Trends, review outcomes and camera-level investigation statistics."
+        title="Insights"
+        description="Recorded incident trends, review outcomes and camera-level intelligence."
       />
       <p className="mb-4 text-xs text-slate-500">
         Statistics cover the last 30 days and reflect stored records only.

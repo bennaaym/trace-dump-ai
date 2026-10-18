@@ -22,7 +22,7 @@ async function LoginContent() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (user) redirect("/overview");
+  if (user) redirect("/operations");
 
   return (
     <main className="grid min-h-screen bg-white lg:grid-cols-2">

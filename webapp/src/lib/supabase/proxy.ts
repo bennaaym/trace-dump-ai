@@ -2,12 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const protectedPrefixes = [
-  "/overview",
+  "/operations",
   "/incidents",
   "/review",
   "/cameras",
   "/map",
   "/reports",
+  "/settings",
 ];
 
 export async function updateSession(request: NextRequest) {
@@ -52,10 +53,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (authenticated && pathname === "/login") {
-    const overviewUrl = request.nextUrl.clone();
-    overviewUrl.pathname = "/overview";
-    overviewUrl.search = "";
-    return copySessionState(response, NextResponse.redirect(overviewUrl));
+    const monitorUrl = request.nextUrl.clone();
+    monitorUrl.pathname = "/operations";
+    monitorUrl.search = "";
+    return copySessionState(response, NextResponse.redirect(monitorUrl));
   }
 
   return response;

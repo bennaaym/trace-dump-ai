@@ -20,5 +20,5 @@ export const loginAction = actionClient
       };
     }
 
-    redirect("/overview");
+    redirect("/operations");
   });

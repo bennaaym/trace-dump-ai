@@ -1,6 +1,6 @@
 export default function OperationsLoading() {
   return (
-    <div className="space-y-4" aria-label="Loading operations map">
+    <div className="space-y-4" aria-label="Loading Monitor">
       <div className="skeleton-shimmer h-16 rounded-xl" />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {Array.from({ length: 5 }, (_, index) => (
