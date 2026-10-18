@@ -292,7 +292,7 @@ function OperationsMap({
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectRef = useRef(onSelect);
-  const [mapReady, setMapReady] = useState(false);
+  const [mapGeneration, setMapGeneration] = useState(0);
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
@@ -321,7 +321,7 @@ function OperationsMap({
       incidentLayerRef.current = leaflet.layerGroup().addTo(map);
       leafletRef.current = leaflet;
       mapRef.current = map;
-      setMapReady(true);
+      setMapGeneration((generation) => generation + 1);
     })();
     return () => {
       cancelled = true;
@@ -334,7 +334,7 @@ function OperationsMap({
   }, []);
 
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapGeneration) return;
     const leaflet = leafletRef.current;
     const map = mapRef.current;
     const incidentLayer = incidentLayerRef.current;
@@ -358,10 +358,10 @@ function OperationsMap({
           .addTo(incidentLayer);
       }
     }
-  }, [incidents, mapReady, showIncidents]);
+  }, [incidents, mapGeneration, showIncidents]);
 
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapGeneration) return;
     const map = mapRef.current;
     const canvas = heatCanvasRef.current;
     if (!map || !canvas) return;
@@ -430,10 +430,10 @@ function OperationsMap({
       map.off("move zoom resize", draw);
       context.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [heatIncidents, mapReady, showHeatmap]);
+  }, [heatIncidents, mapGeneration, showHeatmap]);
 
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapGeneration) return;
     const leaflet = leafletRef.current;
     const map = mapRef.current;
     const cameraLayer = cameraLayerRef.current;
@@ -471,7 +471,7 @@ function OperationsMap({
         .marker([camera.latitude, camera.longitude], { icon })
         .addTo(cameraLayer);
     }
-  }, [cameras, mapReady, selectedId, showCameras]);
+  }, [cameras, mapGeneration, selectedId, showCameras]);
 
   useEffect(() => {
     const camera = cameras.find((item) => item.id === selectedId);
@@ -481,7 +481,7 @@ function OperationsMap({
         Math.max(mapRef.current.getZoom(), 14),
       );
     }
-  }, [cameras, mapReady, selectedId]);
+  }, [cameras, mapGeneration, selectedId]);
 
   const mappedCount = cameras.filter(
     (camera) => camera.latitude != null && camera.longitude != null,
