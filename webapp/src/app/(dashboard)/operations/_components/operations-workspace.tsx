@@ -53,8 +53,13 @@ export function OperationsWorkspace({
       : null,
   );
   const [showCameras, setShowCameras] = useState(true);
-  const [showIncidents, setShowIncidents] = useState(true);
+  const [showIncidents, setShowIncidents] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+
+  const handleHeatmapChange = (checked: boolean) => {
+    setShowHeatmap(checked);
+    if (!checked) setReview("all");
+  };
 
   const periodIncidents = useMemo(() => {
     const unique = [
@@ -115,6 +120,18 @@ export function OperationsWorkspace({
       ),
     [periodIncidents, review, visibleIds],
   );
+  const heatIncidents = useMemo(
+    () =>
+      review === "all"
+        ? filteredIncidents.filter(
+            (incident) => incident.reviewStatus !== "dismissed",
+          )
+        : filteredIncidents,
+    [filteredIncidents, review],
+  );
+  const mappedIncidentCount = filteredIncidents.filter(
+    (incident) => incident.latitude != null && incident.longitude != null,
+  ).length;
   const selectedCamera =
     displayCameras.find(
       (camera) => camera.id === selectedId && visibleIds.has(camera.id),
@@ -180,7 +197,17 @@ export function OperationsWorkspace({
             <option value="enabled">Enabled</option>
             <option value="disabled">Disabled</option>
           </Filter>
-          <Filter value={review} onChange={setReview} label="Review status">
+          <Filter
+            value={review}
+            onChange={setReview}
+            label="Review status"
+            disabled={!showHeatmap}
+            hint={
+              showHeatmap
+                ? undefined
+                : "This filter works only when Heatmap is active."
+            }
+          >
             <option value="all">All review states</option>
             <option value="pending_review">Pending review</option>
             <option value="confirmed">Confirmed</option>
@@ -210,11 +237,13 @@ export function OperationsWorkspace({
           />
           <LayerToggle
             checked={showHeatmap}
-            onChange={setShowHeatmap}
+            onChange={handleHeatmapChange}
             label="Heatmap"
           />
           <span className="ml-auto text-slate-400">
-            {filteredCameras.length} of {data.cameras.length} cameras
+            {mappedIncidentCount} matching incident
+            {mappedIncidentCount === 1 ? "" : "s"} · {filteredCameras.length} of{" "}
+            {data.cameras.length} cameras
           </span>
         </div>
       </section>
@@ -223,6 +252,7 @@ export function OperationsWorkspace({
         <OperationsMap
           cameras={filteredCameras}
           incidents={filteredIncidents}
+          heatIncidents={heatIncidents}
           selectedId={selectedId}
           showCameras={showCameras}
           showIncidents={showIncidents}
@@ -242,6 +272,7 @@ export function OperationsWorkspace({
 function OperationsMap({
   cameras,
   incidents,
+  heatIncidents,
   selectedId,
   showCameras,
   showIncidents,
@@ -250,6 +281,7 @@ function OperationsMap({
 }: {
   cameras: OperationsCamera[];
   incidents: OperationsIncident[];
+  heatIncidents: OperationsIncident[];
   selectedId: string | null;
   showCameras: boolean;
   showIncidents: boolean;
@@ -264,17 +296,6 @@ function OperationsMap({
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectRef = useRef(onSelect);
   const [mapReady, setMapReady] = useState(false);
-  const heatIncidents = useMemo(
-    () => [
-      ...new Map(
-        incidents
-          .filter((incident) => incident.reviewStatus !== "dismissed")
-          .map((incident) => [incident.id, incident]),
-      ).values(),
-    ],
-    [incidents],
-  );
-
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
@@ -289,6 +310,9 @@ function OperationsMap({
       const map = leaflet
         .map(container, { zoomControl: false, minZoom: 9, maxZoom: 19 })
         .setView([BORDEAUX[1], BORDEAUX[0]], 12);
+      const incidentPane = map.createPane("operations-incidents");
+      incidentPane.style.zIndex = "650";
+      incidentPane.style.pointerEvents = "auto";
       leaflet
         .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors",
@@ -326,6 +350,7 @@ function OperationsMap({
       for (const incident of mappedIncidents) {
         leaflet
           .circleMarker([incident.latitude!, incident.longitude!], {
+            pane: "operations-incidents",
             radius: 6,
             color: "#ffffff",
             weight: 2,
@@ -686,23 +711,36 @@ function Filter<T extends string>({
   value,
   onChange,
   label,
+  disabled = false,
+  hint,
   children,
 }: {
   value: T;
   onChange: (value: T) => void;
   label: string;
+  disabled?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label>
+    <label className="group relative block">
       <span className="sr-only">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        className="h-9 w-full rounded-lg border bg-white px-3 text-xs text-slate-600"
+        disabled={disabled}
+        className="h-9 w-full rounded-lg border bg-white px-3 text-xs text-slate-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
       >
         {children}
       </select>
+      {hint && (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute top-full left-1/2 z-[800] mt-2 w-max max-w-64 -translate-x-1/2 rounded-md bg-slate-900 px-2.5 py-1.5 text-[10px] leading-4 text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+        >
+          {hint}
+        </span>
+      )}
     </label>
   );
 }
