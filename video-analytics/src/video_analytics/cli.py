@@ -21,6 +21,7 @@ from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
 from .workers.playback import PlaybackWorker
+from .workers.site_check import SiteCheckWorker
 from .xprotect.client import (
     XProtectClient,
     XProtectError,
@@ -545,6 +546,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=5.0,
         help="queue polling interval in seconds",
     )
+    site_check = sub.add_parser(
+        "site-check-worker",
+        help="re-examine camera footage for overdue cases and record whether the waste is still visible",
+    )
+    site_check.add_argument(
+        "--once",
+        action="store_true",
+        help="process at most one overdue case and exit",
+    )
+    site_check.add_argument(
+        "--poll-interval",
+        type=float,
+        default=300.0,
+        help="seconds to wait between searches when no case is due",
+    )
     return parser
 
 
@@ -572,6 +588,32 @@ def command_playback_worker(settings: Settings, args: argparse.Namespace) -> int
     return 0
 
 
+def command_site_check_worker(settings: Settings, args: argparse.Namespace) -> int:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+    worker = SiteCheckWorker(
+        SupabaseClient(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            timeout=settings.request_timeout,
+        ),
+        _hafnia_client(settings),
+        prompt_template=load_prompt(settings.site_check_prompt_path),
+        prompt_version=settings.site_check_prompt_path.stem,
+        model_id=settings.hafnia_model,
+        poll_interval=settings.poll_interval,
+        poll_timeout=settings.poll_timeout,
+        min_interval_hours=settings.site_check_min_interval_hours,
+        daily_limit=settings.site_check_daily_limit,
+        window_seconds=settings.site_check_window_seconds,
+    )
+    if args.once:
+        print(json.dumps({"processed": worker.process_once()}))
+        return 0
+    worker.run(poll_seconds=args.poll_interval)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = Settings.from_env()
@@ -590,6 +632,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_monitor(settings, args)
         if args.command == "playback-worker":
             return command_playback_worker(settings, args)
+        if args.command == "site-check-worker":
+            return command_site_check_worker(settings, args)
         return command_analyze(settings, args)
     except (
         ValueError,

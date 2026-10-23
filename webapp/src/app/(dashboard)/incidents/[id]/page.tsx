@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, FolderKanban } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { currentTime, isOverdue } from "../../_lib/overdue";
+import { OverdueBadge } from "../../cases/_components/case-badges";
+import { getCaseSummaryForIncident } from "../../cases/_queries/cases";
 import { ReviewStatusBadge } from "../_components/incident-status";
 import { IncidentTabs } from "./_components/incident-tabs";
 import { LocalDateTime } from "./_components/local-date-time";
@@ -24,6 +27,17 @@ export default async function IncidentPage({
   const query = await searchParams;
   const incident = await getIncident(id);
   if (!incident) notFound();
+  const linkedCase = await getCaseSummaryForIncident(incident.id);
+  const recordedAt = incident.occurredAt ?? incident.createdAt;
+  const now = currentTime();
+  const overdue = isOverdue(
+    {
+      recordedAt,
+      reviewStatus: incident.reviewStatus,
+      caseStatus: linkedCase?.status ?? null,
+    },
+    now,
+  );
   const requestedReturnTo = stringValue(query.returnTo);
   const returnTo = safeIncidentListReturn(requestedReturnTo);
   return (
@@ -42,6 +56,7 @@ export default async function IncidentPage({
               Incident {id.slice(0, 8)}
             </h1>
             <ReviewStatusBadge value={incident.reviewStatus} />
+            {overdue && <OverdueBadge recordedAt={recordedAt} now={now} />}
           </div>
           <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
             <span>{incident.camera.name}</span>
@@ -58,7 +73,18 @@ export default async function IncidentPage({
             <LocalDateTime value={incident.occurredAt ?? incident.createdAt} />
           </p>
         </div>
-        <Badge tone="teal">Investigation workspace</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {linkedCase && (
+            <Link
+              href={`/cases/${linkedCase.id}`}
+              className="bg-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white"
+            >
+              <FolderKanban className="size-4" />
+              Open case
+            </Link>
+          )}
+          <Badge tone="teal">Investigation workspace</Badge>
+        </div>
       </header>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <IncidentTabs incident={incident} />

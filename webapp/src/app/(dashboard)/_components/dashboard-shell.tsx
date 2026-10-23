@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ClipboardCheck,
+  FolderKanban,
   LogOut,
   MapPinned,
   Menu,
@@ -25,6 +26,7 @@ const navigation = [
   { href: "/operations", label: "Monitor", icon: MapPinned },
   { href: "/incidents", label: "Incidents", icon: ShieldCheck },
   { href: "/review", label: "Review Queue", icon: ClipboardCheck },
+  { href: "/cases", label: "Cases", icon: FolderKanban },
   { href: "/reports", label: "Insights", icon: ChartNoAxesCombined },
 ] as const;
 

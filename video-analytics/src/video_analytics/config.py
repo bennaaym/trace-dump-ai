@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "hafnia" / "prompts" / "dumping_v1.txt"
+DEFAULT_SITE_CHECK_PROMPT_PATH = (
+    Path(__file__).resolve().parent / "hafnia" / "prompts" / "site_check_v1.txt"
+)
 DEFAULT_RUNS_DIR = PROJECT_ROOT / "runs" / "hafnia"
 DEFAULT_EXPORTS_DIR = PROJECT_ROOT / "runs" / "xprotect"
 DEFAULT_PLAYBACK_CACHE_DIR = PROJECT_ROOT / "runs" / "playback"
@@ -49,6 +52,10 @@ class Settings:
     playback_cache_dir: Path = DEFAULT_PLAYBACK_CACHE_DIR
     playback_retention_hours: int = 24
     playback_transcode_threads: int = 1
+    site_check_prompt_path: Path = DEFAULT_SITE_CHECK_PROMPT_PATH
+    site_check_min_interval_hours: int = 12
+    site_check_daily_limit: int = 20
+    site_check_window_seconds: int = 60
 
     @classmethod
     def from_env(cls, env_file: Path | str | None = None) -> Settings:
@@ -78,6 +85,14 @@ class Settings:
             ),
             playback_retention_hours=int(os.getenv("TRACEDUMP_PLAYBACK_RETENTION_HOURS", "24")),
             playback_transcode_threads=int(os.getenv("TRACEDUMP_PLAYBACK_TRANSCODE_THREADS", "1")),
+            site_check_prompt_path=Path(
+                os.getenv("SITE_CHECK_PROMPT_PATH", str(DEFAULT_SITE_CHECK_PROMPT_PATH))
+            ),
+            site_check_min_interval_hours=int(
+                os.getenv("TRACEDUMP_SITE_CHECK_MIN_INTERVAL_HOURS", "12")
+            ),
+            site_check_daily_limit=int(os.getenv("TRACEDUMP_SITE_CHECK_DAILY_LIMIT", "20")),
+            site_check_window_seconds=int(os.getenv("TRACEDUMP_SITE_CHECK_WINDOW_SECONDS", "60")),
         )
 
 

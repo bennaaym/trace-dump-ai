@@ -1,0 +1,23 @@
+You are checking whether a previously reported waste-dumping site is still affected. This is a follow-up check on the same camera.
+
+An earlier recording from this camera was reviewed by a human operator and confirmed as a dumping incident. What was reported:
+- Classification: {classification}
+- Objects reported: {objects}
+- Description of the original event: {description}
+
+Examine the CURRENT recording supplied with this request and decide whether the reported waste or abandoned objects are still visible at the location.
+
+Rules:
+- Answer "No" only when the same location is clearly visible and the reported objects are not there.
+- Answer "Yes" only when the reported waste or objects are clearly visible.
+- Answer "Uncertain" when the view looks different from the original scene, is dark, blurred, obstructed or too distant, when you cannot tell whether it is the same location, or when anything else prevents a reliable conclusion.
+- Describe only visible characteristics. Do not guess identities, and do not assume cleanup happened because nothing is visible.
+
+Return every field below, using exactly these labels:
+
+Waste still present: Yes / No / Uncertain
+Current view: What the camera shows now, and whether it matches the original scene
+Evidence: Visible observations supporting the conclusion
+Uncertainties: Anything that cannot be determined reliably
+
+Base the conclusion strictly on visible evidence.

@@ -5,6 +5,8 @@ import { ClipboardCheck, ImageOff } from "lucide-react";
 
 import { EmptyState, PageHeader } from "../_components/page-elements";
 import { formatDateTime } from "../_lib/format";
+import { currentTime, isOverdue } from "../_lib/overdue";
+import { OverdueBadge } from "../cases/_components/case-badges";
 import { ReviewStatusBadge } from "../incidents/_components/incident-status";
 import { getReviewQueue } from "./_queries/review";
 
@@ -12,6 +14,7 @@ export const metadata: Metadata = { title: "Review Queue" };
 
 export default async function ReviewPage() {
   const incidents = await getReviewQueue();
+  const now = currentTime();
   return (
     <>
       <PageHeader
@@ -44,7 +47,22 @@ export default async function ReviewPage() {
                   )}
                 </div>
                 <div>
-                  <ReviewStatusBadge value={incident.reviewStatus} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ReviewStatusBadge value={incident.reviewStatus} />
+                    {isOverdue(
+                      {
+                        recordedAt: incident.occurredAt ?? incident.createdAt,
+                        reviewStatus: incident.reviewStatus,
+                        caseStatus: null,
+                      },
+                      now,
+                    ) && (
+                      <OverdueBadge
+                        recordedAt={incident.occurredAt ?? incident.createdAt}
+                        now={now}
+                      />
+                    )}
+                  </div>
                   <p className="mt-2 text-xs text-slate-600">
                     {incident.camera.name} ·{" "}
                     {formatDateTime(incident.occurredAt)}

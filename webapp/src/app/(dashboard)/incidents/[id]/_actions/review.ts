@@ -58,5 +58,6 @@ export const reviewIncidentAction = actionClient
     revalidatePath("/review");
     revalidatePath("/operations");
     revalidatePath("/reports");
+    revalidatePath("/cases");
     return { success: true as const, error: null };
   });
