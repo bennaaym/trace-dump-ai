@@ -9,7 +9,6 @@ import {
   MapPin,
   Search,
   ShieldCheck,
-  VideoOff,
   X,
 } from "lucide-react";
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
@@ -19,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "../../_lib/format";
 import { CleanupStatusBadge } from "../../cleanup/_components/cleanup-status";
+import { LiveCameraPlayer } from "./live-camera-player";
 import type {
   OperationsCamera,
   OperationsCleanupCase,
@@ -644,18 +644,11 @@ function CameraPanel({
               <X className="size-4" />
             </button>
           </div>
-          <div className="m-4 grid aspect-video place-items-center rounded-xl border border-slate-700 bg-slate-950 p-5 text-center text-white">
-            <div>
-              <VideoOff className="mx-auto size-7 text-slate-400" />
-              <p className="mt-2 text-sm font-semibold">
-                Live preview unavailable
-              </p>
-              <p className="mt-1 text-[11px] leading-4 text-slate-400">
-                A secure XProtect WebRTC or authenticated preview bridge is not
-                configured. No playback is being simulated.
-              </p>
-            </div>
-          </div>
+          <LiveCameraPlayer
+            key={camera.id}
+            cameraId={camera.id}
+            cameraName={camera.name}
+          />
           <div className="grid grid-cols-2 gap-2 px-4">
             <PanelStat label="Total incidents" value={camera.incidentCount} />
             <PanelStat

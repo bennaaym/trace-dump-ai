@@ -38,6 +38,15 @@ pnpm knip
 
 Copy the webapp's relevant values from the root `.env.example` into `webapp/.env.local`; Next.js does not automatically load the root `.env`. Only variables prefixed with `NEXT_PUBLIC_` may be sent to the browser.
 
+The Operations Map live preview uses XProtect WebRTC. Configure
+`XPROTECT_BASE_URL`, `XPROTECT_USERNAME`, and `XPROTECT_PASSWORD` in
+`webapp/.env.local`, then start the webapp normally. These values are consumed
+only by the server-side signaling route; the browser receives an opaque session
+handle, SDP, and ICE candidates, never the XProtect bearer token or password.
+The browser must still have network reachability to the API Gateway's WebRTC
+media peer. A deployment separated by NAT or restrictive firewalls requires
+appropriately configured STUN/TURN infrastructure in XProtect.
+
 ## Video analytics
 
 Python 3.11 is the migration baseline; the package currently supports Python 3.11 through 3.13. The migrated worker includes read-only XProtect acquisition/export, MOG2/YOLO activity detection, Hafnia analysis, evidence extraction, and local simulation-run state. Create an isolated environment and install the core development dependencies:
