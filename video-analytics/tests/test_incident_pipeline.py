@@ -8,6 +8,8 @@ from video_analytics.workers.incident_pipeline import (
     SimulationStateStore,
     parse_dumping_response,
 )
+from video_analytics.xprotect.alarms import AlarmPublication
+from video_analytics.xprotect.client import XProtectError
 
 
 class RecordingRepository:
@@ -38,6 +40,23 @@ class NegativeHafnia:
             "Progress": "Completed",
             "Response": "Dumping detected: No\nDumping type: Unknown\nEvent timestamp: Unknown",
         }
+
+
+class RecordingAlarmPublisher:
+    def __init__(self, error=None):
+        self.calls = []
+        self.error = error
+
+    def publish(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return AlarmPublication(
+            incident_id=kwargs["incident_id"],
+            event_id="b4de0996-a3aa-4d2b-96a0-049f4eeac542",
+            alarm_id="cd865c62-4962-4861-b109-5f4f1172f09e",
+            status="published",
+        )
 
 
 CAMERA_ID = "baaba7e1-7e9d-4732-8f46-6612ffc9df1e"
@@ -161,10 +180,93 @@ def test_positive_incident_is_preserved_when_evidence_export_fails(tmp_path: Pat
     assert incident_inserts[0]["values"]["classification"] == "dynamic_dumping"
 
 
+def test_positive_incident_publishes_medium_alarm_event_after_storage(tmp_path: Path, monkeypatch):
+    repository = RecordingRepository()
+    publisher = RecordingAlarmPublisher()
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "TD-DYN-01-Chartrons"),
+        hafnia=None,
+        prompt="prompt",
+        prompt_version="dumping_v1",
+        model_id="traffic-general",
+        runs_root=tmp_path,
+        simulation_run_id="demo",
+        state_store=SimulationStateStore(tmp_path / "state.json"),
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+        alarm_publisher=publisher,
+    )
+    monkeypatch.setattr(
+        "video_analytics.workers.incident_pipeline.run_mip_export",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("synthetic export failure")),
+    )
+    parsed = {
+        "classification": "yes",
+        "dumping_type": "dynamic",
+        "event_offset_seconds": 6.0,
+        "description": "Visible object release.",
+        "uncertainty": None,
+    }
+    analysis_dir = tmp_path / "analyses" / "summary-1"
+    analysis_dir.mkdir(parents=True)
+
+    incident_path, _ = pipeline._create_incident(SESSION, "summary-1", {}, parsed, analysis_dir)
+
+    assert len(publisher.calls) == 1
+    assert publisher.calls[0]["camera_id"] == CAMERA_ID
+    assert publisher.calls[0]["occurred_at_utc"] == "2026-10-16T22:41:46.343Z"
+    incident = __import__("json").loads(Path(incident_path).read_text(encoding="utf-8"))
+    assert incident["xprotect_alarm_publication"]["severity"] == "Medium"
+    assert incident["xprotect_alarm_publication"]["status"] == "published"
+
+
+def test_xprotect_failure_does_not_prevent_incident_storage(tmp_path: Path, monkeypatch):
+    repository = RecordingRepository()
+    publisher = RecordingAlarmPublisher(XProtectError("synthetic publication failure"))
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "TD-DYN-01-Chartrons"),
+        hafnia=None,
+        prompt="prompt",
+        prompt_version="dumping_v1",
+        model_id="traffic-general",
+        runs_root=tmp_path,
+        simulation_run_id="demo",
+        state_store=SimulationStateStore(tmp_path / "state.json"),
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+        alarm_publisher=publisher,
+    )
+    monkeypatch.setattr(
+        "video_analytics.workers.incident_pipeline.run_mip_export",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("synthetic export failure")),
+    )
+    parsed = {
+        "classification": "yes",
+        "dumping_type": "unknown",
+        "event_offset_seconds": None,
+        "description": "Suspected dumping.",
+        "uncertainty": None,
+    }
+    analysis_dir = tmp_path / "analyses" / "summary-1"
+    analysis_dir.mkdir(parents=True)
+
+    incident_path, _ = pipeline._create_incident(SESSION, "summary-1", {}, parsed, analysis_dir)
+
+    incident = __import__("json").loads(Path(incident_path).read_text(encoding="utf-8"))
+    assert incident["xprotect_alarm_publication"]["status"] == "failed"
+    assert incident["review_status"] == "pending_review"
+    assert any(operation.get("table") == "incidents" for operation in repository.operations)
+
+
 def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppressed(tmp_path: Path):
     store = SimulationStateStore(tmp_path / "state.json")
     repository = RecordingRepository()
     hafnia = NegativeHafnia()
+    publisher = RecordingAlarmPublisher()
     pipeline = IncidentPipeline(
         server="http://localhost",
         camera=Camera(CAMERA_ID, "TD-DYN-01-Chartrons"),
@@ -178,6 +280,7 @@ def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppresse
         poll_interval=0,
         poll_timeout=1,
         repository=repository,
+        alarm_publisher=publisher,
     )
 
     first = pipeline.process([SESSION], 1)
@@ -188,6 +291,7 @@ def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppresse
     assert second["requests_submitted"] == 0
     assert second["repeat_sessions_suppressed"] == 1
     assert hafnia.requests == 1
+    assert publisher.calls == []
     inserts = [
         operation.get("table")
         for operation in repository.operations

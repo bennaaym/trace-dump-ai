@@ -1,4 +1,4 @@
-"""Read-only XProtect authentication and camera discovery client."""
+"""XProtect authentication, camera discovery, and event publishing client."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from base64 import b64decode
 from binascii import Error as Base64Error
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -165,6 +166,8 @@ class XProtectClient:
                 self._token = None
                 return self._post(path, payload, retry_auth=False)
             response.raise_for_status()
+            if not response.content:
+                return {}
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise XProtectError(f"XProtect POST {path} failed: {exc}") from exc
@@ -214,3 +217,116 @@ class XProtectClient:
         except (Base64Error, ValueError) as exc:
             raise XProtectError("JpegGetLive returned invalid base64 JPEG data") from exc
         return XProtectJpeg(camera_id=canonical_id, frame_datetime=timestamp, jpeg_bytes=data)
+
+    def get_analytics_event_id(self, name: str) -> str:
+        """Resolve one configured analytics event by its exact name."""
+        payload = self._get("/analyticsEvents")
+        raw_items = payload.get("array") if isinstance(payload, dict) else None
+        if not isinstance(raw_items, list):
+            raise XProtectError("Analytics event response did not contain an array")
+        matches = [
+            item.get("id")
+            for item in raw_items
+            if isinstance(item, dict) and item.get("name") == name
+        ]
+        if len(matches) != 1 or not isinstance(matches[0], str):
+            raise XProtectError(
+                f"Expected exactly one enabled XProtect analytics event named {name!r}"
+            )
+        return matches[0]
+
+    def trigger_event(
+        self,
+        *,
+        event_type_id: str,
+        source: str,
+        occurred_at_utc: str,
+        tag: str,
+    ) -> dict[str, Any]:
+        """Trigger an event using only fields documented by the Events REST API."""
+        try:
+            canonical_type_id = str(uuid.UUID(event_type_id))
+            source_type, source_id = source.split("/", maxsplit=1)
+            canonical_source_id = str(uuid.UUID(source_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("Event type and source must contain valid GUIDs") from exc
+        if source_type != "cameras":
+            raise ValueError("TraceDump events must use an XProtect camera source")
+        event_time = _canonical_utc(occurred_at_utc)
+        payload = self._post(
+            "/events",
+            {
+                "type": canonical_type_id,
+                "source": f"cameras/{canonical_source_id}",
+                "time": event_time,
+                "datatype": "analytics",
+                "tag": tag,
+                "data": {},
+            },
+        )
+        if not isinstance(payload, dict):
+            raise XProtectError("XProtect event response was not an object")
+        return payload
+
+    def get_alarm_priority_id(self, name: str) -> str:
+        """Resolve one configured native alarm priority by its exact name."""
+        payload = self._get("/alarmPriorities")
+        raw_items = payload.get("array") if isinstance(payload, dict) else None
+        if not isinstance(raw_items, list):
+            raise XProtectError("Alarm priority response did not contain an array")
+        matches = [
+            item.get("id")
+            for item in raw_items
+            if isinstance(item, dict) and item.get("name") == name
+        ]
+        if len(matches) != 1 or not isinstance(matches[0], str):
+            raise XProtectError(f"Expected exactly one XProtect alarm priority named {name!r}")
+        return matches[0]
+
+    def find_alarm_id_by_tag(self, tag: str) -> str | None:
+        """Return an existing alarm ID for an incident tag, if present."""
+        filter_value = quote(f"equals:'{tag}'", safe="':")
+        payload = self._get(f"/alarms?tag={filter_value}&size=1")
+        raw_items = payload.get("array") if isinstance(payload, dict) else None
+        if not isinstance(raw_items, list):
+            raise XProtectError("Alarm response did not contain an array")
+        if not raw_items:
+            return None
+        alarm_id = raw_items[0].get("id") if isinstance(raw_items[0], dict) else None
+        if not isinstance(alarm_id, str):
+            raise XProtectError("Existing alarm response is missing an id")
+        return alarm_id
+
+    def trigger_alarm(
+        self,
+        *,
+        name: str,
+        message: str,
+        priority_id: str,
+        source: str,
+        occurred_at_utc: str,
+        tag: str,
+    ) -> dict[str, Any]:
+        """Create a native alarm with the fields documented by the Alarms REST API."""
+        try:
+            canonical_priority_id = str(uuid.UUID(priority_id))
+            source_type, source_id = source.split("/", maxsplit=1)
+            canonical_source_id = str(uuid.UUID(source_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("Alarm priority and source must contain valid GUIDs") from exc
+        if source_type != "cameras":
+            raise ValueError("TraceDump alarms must use an XProtect camera source")
+        payload = self._post(
+            "/alarms",
+            {
+                "name": name,
+                "message": message,
+                "priority": canonical_priority_id,
+                "source": f"cameras/{canonical_source_id}",
+                "time": _canonical_utc(occurred_at_utc),
+                "tag": tag,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise XProtectError("XProtect alarm response was not an object")
+        return payload

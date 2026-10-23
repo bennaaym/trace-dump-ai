@@ -21,6 +21,7 @@ from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
 from .workers.playback import PlaybackWorker
+from .xprotect.alarms import SuspectedDumpingEventPublisher
 from .xprotect.client import (
     XProtectClient,
     XProtectError,
@@ -400,6 +401,7 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
                     "detector_config": activity["detector_config"],
                     "model_device": activity["model_device"],
                 },
+                alarm_publisher=SuspectedDumpingEventPublisher(xprotect),
             )
             phase_result = pipeline.process(activity["activity_sessions"], args.max_hafnia_requests)
         write_json_atomic(

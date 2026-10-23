@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -22,7 +23,8 @@ from ..detection.activity import write_json_atomic
 from ..evidence import extract_evidence_frames
 from ..hafnia.client import HafniaClient, HafniaError
 from ..models import Camera
-from ..xprotect.client import validate_utc_timestamp
+from ..xprotect.alarms import DEFAULT_ALARM_SEVERITY, SuspectedDumpingEventPublisher
+from ..xprotect.client import XProtectError, validate_utc_timestamp
 from ..xprotect.positioning import parse_camera_position
 from ..xprotect.video_export import run_mip_export
 
@@ -37,6 +39,8 @@ FIELD_NAMES = (
     "Evidence",
     "Uncertainties",
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -175,6 +179,7 @@ class IncidentPipeline:
         poll_timeout: float,
         repository: AnalysisRepository | None = None,
         detector_metadata: dict[str, Any] | None = None,
+        alarm_publisher: SuspectedDumpingEventPublisher | None = None,
     ) -> None:
         self.server = server
         self.camera = camera
@@ -189,6 +194,7 @@ class IncidentPipeline:
         self.poll_timeout = poll_timeout
         self.repository = repository
         self.detector_metadata = detector_metadata or {}
+        self.alarm_publisher = alarm_publisher
 
     def _queue(self, operation: dict[str, Any]) -> None:
         if self.repository is not None:
@@ -573,4 +579,33 @@ class IncidentPipeline:
                 )
             )
         self._flush()
+        event_time = (
+            occurred_at(session["recording_start_utc"], parsed["event_offset_seconds"])
+            or session["activity_start_utc"]
+        )
+        alarm_publication: dict[str, Any] = {"status": "disabled"}
+        if self.alarm_publisher is not None:
+            try:
+                publication = self.alarm_publisher.publish(
+                    incident_id=incident_id,
+                    camera_id=self.camera.id,
+                    occurred_at_utc=event_time,
+                )
+                alarm_publication = {
+                    "status": publication.status,
+                    "event_id": publication.event_id,
+                    "alarm_id": publication.alarm_id,
+                    "severity": DEFAULT_ALARM_SEVERITY.value,
+                    "occurred_at_utc": event_time,
+                }
+            except (ValueError, XProtectError) as exc:
+                alarm_publication = {"status": "failed", "error": str(exc)}
+                logger.warning(
+                    "xprotect_dumping_event_failed incident_id=%s camera_id=%s error=%s",
+                    incident_id,
+                    self.camera.id,
+                    exc,
+                )
+        incident["xprotect_alarm_publication"] = alarm_publication
+        write_json_atomic(incident_dir / "incident.json", incident)
         return str((incident_dir / "incident.json").resolve()), evidence_status

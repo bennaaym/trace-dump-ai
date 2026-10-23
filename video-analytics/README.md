@@ -68,6 +68,22 @@ For an analysis-enabled monitoring run, the worker journals deterministic detect
 
 Camera synchronization reads GUID, display name, and `gisPoint` positioning metadata from XProtect. A dry run reads current Supabase rows so it can accurately show changes, but does not write. Initial monitoring defaults are applied only when a GUID is first inserted; later runs preserve the application-owned `enabled` and `status` fields. Cameras temporarily absent from discovery are left untouched.
 
+## XProtect dumping alarms
+
+Run `scripts/setup-xprotect-alarm.ps1` once on the XProtect machine to create the
+`TraceDump AI Suspected Dumping` analytics event. Pass an XProtect basic-user
+`PSCredential` and `-BasicUser`; the credential is used in memory and is not saved.
+
+For each newly created positive incident, the worker triggers that event and then
+creates a native alarm through the documented Alarms REST API. The alarm contract
+is centralized in `xprotect/alarms.py`: title `TraceDump AI — Suspected Dumping`,
+description `AI-detected suspected dumping. Human review required.`, and fixed
+priority `Medium`. The API event and alarm both use the original camera GUID and
+UTC incident timestamp. The incident ID is carried as a tag and checked before
+publishing to avoid intentional duplicates during reprocessing. No XProtect Alarm
+Definition or database migration is required because priority is supplied directly
+to the native alarm API.
+
 ## Checks
 
 ```powershell

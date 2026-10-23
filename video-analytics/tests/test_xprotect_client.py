@@ -131,3 +131,47 @@ def test_get_live_jpeg_uses_documented_camera_task():
         "/api/rest/v1/cameras/baaba7e1-7e9d-4732-8f46-6612ffc9df1e?task=JpegGetLive"
     )
     assert request["json"] == {"width": 640, "height": 360}
+
+
+def test_analytics_event_is_resolved_and_triggered_with_camera_and_utc_time():
+    event_type_id = "d8b5a5a4-161d-42c0-bfb8-6a023d6f43e1"
+    camera_id = "baaba7e1-7e9d-4732-8f46-6612ffc9df1e"
+
+    class EventSession:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            if url.endswith("/API/IDP/connect/token"):
+                return FakeResponse({"access_token": "token", "expires_in": 3600})
+            return FakeResponse({"data": {"id": "b4de0996-a3aa-4d2b-96a0-049f4eeac542"}}, 202)
+
+        def get(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return FakeResponse(
+                {"array": [{"id": event_type_id, "name": "TraceDump AI Suspected Dumping"}]}
+            )
+
+    session = EventSession()
+    client = XProtectClient("http://localhost", "user", "pass", session=session)
+
+    assert client.get_analytics_event_id("TraceDump AI Suspected Dumping") == event_type_id
+    response = client.trigger_event(
+        event_type_id=event_type_id,
+        source=f"cameras/{camera_id}",
+        occurred_at_utc="2026-10-16T22:41:46.343Z",
+        tag="tracedump-incident:test",
+    )
+
+    assert response["data"]["id"] == "b4de0996-a3aa-4d2b-96a0-049f4eeac542"
+    url, request = session.calls[-1]
+    assert url.endswith("/api/rest/v1/events")
+    assert request["json"] == {
+        "type": event_type_id,
+        "source": f"cameras/{camera_id}",
+        "time": "2026-10-16T22:41:46.343000Z",
+        "datatype": "analytics",
+        "tag": "tracedump-incident:test",
+        "data": {},
+    }
