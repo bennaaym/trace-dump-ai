@@ -10,7 +10,10 @@ export const cleanupMutationSchema = z
       "mark_cleaned",
       "reopen",
       "resolve",
+      "manual_recheck",
+      "acknowledge_notification",
     ]),
+    notificationId: z.uuid().optional(),
     teamId: z.uuid().optional(),
     slaHours: z.union([z.literal(24), z.literal(48), z.literal(72)]).optional(),
     instructions: z.string().trim().max(4000).optional(),
@@ -51,6 +54,13 @@ export const cleanupMutationSchema = z
         code: "custom",
         path: ["resolutionOutcome"],
         message: "Choose a resolution outcome.",
+      });
+    }
+    if (value.action === "acknowledge_notification" && !value.notificationId) {
+      context.addIssue({
+        code: "custom",
+        path: ["notificationId"],
+        message: "Choose a notification to acknowledge.",
       });
     }
   });

@@ -21,6 +21,7 @@ from .hafnia.client import HafniaClient, HafniaError
 from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
 from .workers.playback import PlaybackWorker
+from .workers.scene_checks import SceneCheckWorker
 from .xprotect.alarms import SuspectedDumpingEventPublisher
 from .xprotect.client import (
     XProtectClient,
@@ -547,6 +548,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=5.0,
         help="queue polling interval in seconds",
     )
+    scene_checks = sub.add_parser(
+        "scene-check-worker",
+        help="process durable cleanup deadline checks (each analyzed check costs one Hafnia request)",
+    )
+    scene_checks.add_argument(
+        "--once", action="store_true", help="process at most one due check and exit"
+    )
+    scene_checks.add_argument(
+        "--poll-interval", type=float, default=5.0, help="queue polling interval in seconds"
+    )
     return parser
 
 
@@ -574,6 +585,29 @@ def command_playback_worker(settings: Settings, args: argparse.Namespace) -> int
     return 0
 
 
+def command_scene_check_worker(settings: Settings, args: argparse.Namespace) -> int:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+    worker = SceneCheckWorker(
+        SupabaseClient(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            timeout=settings.request_timeout,
+        ),
+        _hafnia_client(settings),
+        xprotect_server=settings.xprotect_base_url,
+        model_id=settings.hafnia_model,
+        poll_interval=settings.poll_interval,
+        poll_timeout=settings.poll_timeout,
+    )
+    if args.once:
+        processed = worker.process_once()
+        print(json.dumps({"processed": processed}))
+        return 0
+    worker.run(poll_seconds=args.poll_interval)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = Settings.from_env()
@@ -592,6 +626,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_monitor(settings, args)
         if args.command == "playback-worker":
             return command_playback_worker(settings, args)
+        if args.command == "scene-check-worker":
+            return command_scene_check_worker(settings, args)
         return command_analyze(settings, args)
     except (
         ValueError,

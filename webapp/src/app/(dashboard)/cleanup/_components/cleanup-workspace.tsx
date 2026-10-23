@@ -1,14 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  BellRing,
   CheckCircle2,
   ClipboardList,
   Clock3,
   Pencil,
+  RefreshCw,
   Search,
   ShieldCheck,
   StickyNote,
@@ -42,7 +45,13 @@ import { CleanupStatusBadge } from "./cleanup-status";
 
 type StatusFilter = "all" | CleanupStatus;
 type CleanupAction =
-  "assign_cleanup" | "add_note" | "mark_cleaned" | "reopen" | "resolve";
+  | "assign_cleanup"
+  | "add_note"
+  | "mark_cleaned"
+  | "reopen"
+  | "resolve"
+  | "manual_recheck"
+  | "acknowledge_notification";
 
 export function CleanupWorkspace({
   data,
@@ -191,6 +200,13 @@ export function CleanupWorkspace({
                               Reconcile
                             </Badge>
                           )}
+                          {item.notifications.some(
+                            (notification) => !notification.acknowledgedAt,
+                          ) && (
+                            <Badge tone="danger" className="ml-1">
+                              Attention Required
+                            </Badge>
+                          )}
                         </td>
                         <td
                           className={cn(
@@ -283,18 +299,22 @@ function CaseDrawer({
     teamId !== (cleanupCase.assignedTeamId ?? "") ||
     slaHours !== (cleanupCase.slaHours ?? 48) ||
     instructions !== (cleanupCase.instructions ?? "");
-  const duePreview = calculateCleanupDueAt(cleanupCase.assignedAt, slaHours);
+  const duePreview = calculateCleanupDueAt(
+    cleanupCase.assignedAt ?? referenceTime,
+    slaHours,
+  );
   const visibleActivity = buildVisibleCleanupActivity(cleanupCase.history);
   const displayedActivity = historyExpanded
     ? visibleActivity
     : visibleActivity.slice(0, 4);
 
-  async function execute(action: CleanupAction) {
+  async function execute(action: CleanupAction, notificationId?: string) {
     setError(null);
     const result = await mutation.executeAsync({
       caseId: cleanupCase.id,
       expectedUpdatedAt: cleanupCase.updatedAt,
       action,
+      ...(notificationId ? { notificationId } : {}),
       ...(action === "assign_cleanup"
         ? { teamId, slaHours, instructions }
         : {}),
@@ -497,6 +517,15 @@ function CaseDrawer({
             )}
           </DrawerSection>
 
+          <DrawerSection title="Scene Check">
+            <SceneCheckPanel
+              cleanupCase={cleanupCase}
+              pending={mutation.isPending}
+              onRecheck={() => execute("manual_recheck")}
+              onAcknowledge={(id) => execute("acknowledge_notification", id)}
+            />
+          </DrawerSection>
+
           <DrawerSection title="Activity & Actions">
             {resolved && (
               <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs">
@@ -508,7 +537,11 @@ function CaseDrawer({
                   <dt className="text-emerald-700">Result</dt>
                   <dd>{cleanupOutcomeLabel(cleanupCase.resolutionOutcome)}</dd>
                   <dt className="text-emerald-700">Method</dt>
-                  <dd>Human review</dd>
+                  <dd>
+                    {cleanupCase.resolutionSource === "ai"
+                      ? "Validated AI scene check"
+                      : "Human review"}
+                  </dd>
                   <dt className="text-emerald-700">Verified by</dt>
                   <dd>
                     {cleanupCase.resolverLabel ?? "Authorized coordinator"}
@@ -721,6 +754,167 @@ function DrawerSection({
       <h3 className="mb-3 text-sm font-bold text-slate-900">{title}</h3>
       {children}
     </section>
+  );
+}
+
+function SceneCheckPanel({
+  cleanupCase,
+  pending,
+  onRecheck,
+  onAcknowledge,
+}: {
+  cleanupCase: CleanupCase;
+  pending: boolean;
+  onRecheck: () => void;
+  onAcknowledge: (id: string) => void;
+}) {
+  const latest = cleanupCase.sceneChecks[0] ?? null;
+  const next = cleanupCase.sceneChecks.find(
+    (check) => check.status === "scheduled",
+  );
+  const attention = cleanupCase.notifications.filter(
+    (notification) => !notification.acknowledgedAt,
+  );
+  return (
+    <div className="space-y-3 text-xs">
+      {attention.map((notification) => (
+        <div
+          key={notification.id}
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-900"
+        >
+          <p className="flex items-center gap-2 font-semibold">
+            <BellRing className="size-4" /> {notification.title}
+          </p>
+          <p className="mt-1 leading-5">{notification.message}</p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onAcknowledge(notification.id)}
+            className="mt-2 font-semibold text-red-700 hover:text-red-950 disabled:opacity-50"
+          >
+            Acknowledge
+          </button>
+        </div>
+      ))}
+
+      <dl className="grid grid-cols-[110px_1fr] gap-y-2 rounded-lg bg-slate-50 p-3 leading-5">
+        <dt className="text-slate-500">Next check</dt>
+        <dd>{next ? formatDateTime(next.scheduledFor) : "None scheduled"}</dd>
+        <dt className="text-slate-500">Current status</dt>
+        <dd className="font-semibold capitalize">
+          {latest?.status.replace("_", " ") ?? "Not scheduled"}
+          {latest?.cancellationRequested ? " · cancellation requested" : ""}
+        </dd>
+        <dt className="text-slate-500">Assessment</dt>
+        <dd className="capitalize">
+          {latest?.assessment?.replace("_", " ") ?? "Not available"}
+        </dd>
+        <dt className="text-slate-500">Captured</dt>
+        <dd>
+          {latest?.capturedAt
+            ? formatDateTime(latest.capturedAt)
+            : "Not captured"}
+        </dd>
+        <dt className="text-slate-500">Analyzed</dt>
+        <dd>
+          {latest?.analyzedAt
+            ? formatDateTime(latest.analyzedAt)
+            : "Not analyzed"}
+        </dd>
+      </dl>
+
+      {(cleanupCase.incident.originalEvidenceUrl || latest?.snapshotUrl) && (
+        <div className="grid grid-cols-2 gap-2">
+          <EvidenceImage
+            label="Original post-dumping evidence"
+            url={cleanupCase.incident.originalEvidenceUrl}
+          />
+          <EvidenceImage
+            label="Latest follow-up"
+            url={latest?.snapshotUrl ?? null}
+          />
+        </div>
+      )}
+
+      {!!latest?.groundedObservations.length && (
+        <div>
+          <p className="font-semibold text-slate-700">Grounded observations</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-slate-600">
+            {latest.groundedObservations.map((observation) => (
+              <li key={observation}>{observation}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {!!latest?.limitations.length && (
+        <p className="rounded-lg bg-amber-50 p-3 leading-5 text-amber-900">
+          {latest.limitations.join(" ")}
+        </p>
+      )}
+      {latest?.errorMessage && (
+        <p className="rounded-lg bg-red-50 p-3 text-red-800">
+          {latest.errorMessage}
+        </p>
+      )}
+
+      {!cleanupCase.sceneChecks.length ? (
+        <p className="text-slate-500">
+          A check will be scheduled when a cleanup deadline is assigned.
+        </p>
+      ) : (
+        <details>
+          <summary className="cursor-pointer font-semibold text-teal-700">
+            Check history ({cleanupCase.sceneChecks.length})
+          </summary>
+          <ol className="mt-2 space-y-2 border-l pl-3 text-slate-600">
+            {cleanupCase.sceneChecks.map((check) => (
+              <li key={check.id}>
+                <span className="font-semibold text-slate-800 capitalize">
+                  {check.status}
+                </span>{" "}
+                · {formatDateTime(check.scheduledFor)} · {check.triggerKind}
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+
+      {!cleanupCase.resolvedAt && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onRecheck}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-white px-3 py-2 font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+        >
+          <RefreshCw className="size-3.5" /> Manual Recheck
+        </button>
+      )}
+    </div>
+  );
+}
+
+function EvidenceImage({ label, url }: { label: string; url: string | null }) {
+  return (
+    <figure>
+      <div className="relative aspect-video overflow-hidden rounded-lg bg-slate-100">
+        {url ? (
+          <Image
+            src={url}
+            alt={label}
+            fill
+            unoptimized
+            className="object-cover"
+          />
+        ) : (
+          <span className="grid h-full place-items-center p-2 text-center text-[10px] text-slate-400">
+            Not available
+          </span>
+        )}
+      </div>
+      <figcaption className="mt-1 text-[10px] text-slate-500">
+        {label}
+      </figcaption>
+    </figure>
   );
 }
 

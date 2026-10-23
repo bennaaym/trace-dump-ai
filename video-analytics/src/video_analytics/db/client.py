@@ -43,6 +43,7 @@ class SupabaseClient:
         json: Any = None,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        raw: bool = False,
     ) -> Any:
         request_headers = {**self.headers, **(headers or {})}
         try:
@@ -56,6 +57,8 @@ class SupabaseClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+            if raw:
+                return response.content
             return response.json() if response.content else None
         except (requests.RequestException, ValueError) as exc:
             raise SupabaseError(f"Supabase {method} {path} failed: {exc}") from exc

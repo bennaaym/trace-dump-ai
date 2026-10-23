@@ -11,7 +11,10 @@ cameras
         `-- incidents (zero or one)
               |-- evidence (zero or many assets)
               |-- incident_reviews (append-only history)
-              `-- incident_recordings (zero or one on-demand derivative)
+              |-- incident_recordings (zero or one on-demand derivative)
+              `-- cleanup_cases
+                    |-- cleanup_scene_checks (durable deadline/manual jobs)
+                    `-- cleanup_notifications (deduplicated attention state)
 ```
 
 - `cameras` uses the XProtect camera GUID as its primary key. Coordinates are paired and range-checked. `status` records observed connectivity only; no inference is made from demo camera names.
@@ -115,6 +118,8 @@ Canonical migrations live in `database/migrations/` and apply in timestamp order
 6. A narrowly scoped bootstrap operator assignment for the initial investigator.
 7. Safe investigation-response access and concurrency-aware review transitions.
 8. On-demand private incident-recording queue, worker lease, and Storage policy.
+9. Cleanup teams, deadline scheduling, leased scene checks, private follow-up
+   snapshots, cancellation, AI-resolution safety gates, and notifications.
 
 The Supabase CLI does **not** automatically discover this custom directory; it reads `supabase/migrations/`. For local validation, stage exact copies into a CLI project and treat this directory as canonical:
 

@@ -1,6 +1,38 @@
 export type CleanupStatus =
   "awaiting_cleanup" | "in_progress" | "verification" | "resolved";
 export type ResolutionOutcome = "cleanup_completed" | "site_already_cleared";
+type SceneCheckAssessment = "still_visible" | "appears_cleared" | "uncertain";
+
+interface CleanupSceneCheck {
+  id: string;
+  triggerKind: "deadline" | "manual" | "retry";
+  scheduledFor: string;
+  status:
+    | "scheduled"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "superseded";
+  assessment: SceneCheckAssessment | null;
+  groundedObservations: string[];
+  limitations: string[];
+  snapshotUrl: string | null;
+  capturedAt: string | null;
+  analyzedAt: string | null;
+  modelId: string | null;
+  errorMessage: string | null;
+  cancellationRequested: boolean;
+}
+
+interface CleanupNotification {
+  id: string;
+  kind: "still_visible" | "uncertain" | "capture_failed" | "analysis_failed";
+  title: string;
+  message: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+}
 
 export interface CleanupTeam {
   id: string;
@@ -32,6 +64,7 @@ export interface CleanupCase {
   completionReport: string | null;
   resolutionOutcome: ResolutionOutcome | null;
   resolutionNotes: string | null;
+  resolutionSource: "human" | "ai" | null;
   startedAt: string | null;
   resolvedAt: string | null;
   resolverLabel: string | null;
@@ -46,7 +79,10 @@ export interface CleanupCase {
     longitude: number | null;
     locationSource: "real" | "simulated";
     cameraName: string;
+    originalEvidenceUrl: string | null;
   };
+  sceneChecks: CleanupSceneCheck[];
+  notifications: CleanupNotification[];
   history: CleanupHistoryItem[];
 }
 

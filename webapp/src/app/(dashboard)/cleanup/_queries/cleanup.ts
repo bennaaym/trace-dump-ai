@@ -16,7 +16,7 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     supabase
       .from("cleanup_cases")
       .select(
-        "id,incident_id,status,assigned_team_id,assigned_at,sla_hours,due_at,instructions,completion_report,resolution_outcome,resolution_notes,started_at,resolved_at,resolved_by,reconciliation_required,created_at,updated_at",
+        "id,incident_id,status,assigned_team_id,assigned_at,sla_hours,due_at,instructions,completion_report,resolution_outcome,resolution_notes,resolution_source,started_at,resolved_at,resolved_by,reconciliation_required,created_at,updated_at",
       ),
     supabase
       .from("cleanup_teams")
@@ -48,24 +48,44 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
 
   const incidentIds = caseRows.map((item) => item.incident_id);
   const caseIds = caseRows.map((item) => item.id);
-  const [incidentsResult, historyResult] = await Promise.all([
-    supabase
-      .from("incidents")
-      .select(
-        "id,detection_id,description,occurred_at,created_at,latitude,longitude,location_source",
-      )
-      .in("id", incidentIds),
-    supabase
-      .from("cleanup_case_history")
-      .select(
-        "id,cleanup_case_id,actor_id,event_type,previous_status,new_status,notes,created_at",
-      )
-      .in("cleanup_case_id", caseIds)
-      .order("created_at", { ascending: false }),
-  ]);
-  if (incidentsResult.error || historyResult.error) {
+  const [incidentsResult, historyResult, checksResult, notificationsResult] =
+    await Promise.all([
+      supabase
+        .from("incidents")
+        .select(
+          "id,detection_id,description,occurred_at,created_at,latitude,longitude,location_source",
+        )
+        .in("id", incidentIds),
+      supabase
+        .from("cleanup_case_history")
+        .select(
+          "id,cleanup_case_id,actor_id,event_type,previous_status,new_status,notes,created_at",
+        )
+        .in("cleanup_case_id", caseIds)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("cleanup_scene_checks")
+        .select(
+          "id,cleanup_case_id,trigger_kind,scheduled_for,status,assessment,grounded_observations,limitations,snapshot_storage_path,captured_at,analysis_completed_at,model_id,error_message,cancellation_requested,created_at",
+        )
+        .in("cleanup_case_id", caseIds)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("cleanup_notifications")
+        .select(
+          "id,cleanup_case_id,kind,title,message,created_at,acknowledged_at",
+        )
+        .in("cleanup_case_id", caseIds)
+        .order("created_at", { ascending: false }),
+    ]);
+  if (
+    incidentsResult.error ||
+    historyResult.error ||
+    checksResult.error ||
+    notificationsResult.error
+  ) {
     throw new Error(
-      `Unable to load cleanup details: ${incidentsResult.error?.message ?? historyResult.error?.message}`,
+      `Unable to load cleanup details: ${incidentsResult.error?.message ?? historyResult.error?.message ?? checksResult.error?.message ?? notificationsResult.error?.message}`,
     );
   }
 
@@ -83,15 +103,53 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
   const cameraIds = [
     ...new Set((detections ?? []).map((item) => item.camera_id)),
   ];
-  const { data: cameras, error: camerasError } = await supabase
-    .from("cameras")
-    .select("id,name")
-    .in("id", cameraIds);
-  if (camerasError) {
+  const [camerasResult, evidenceResult] = await Promise.all([
+    supabase.from("cameras").select("id,name").in("id", cameraIds),
+    supabase
+      .from("evidence")
+      .select("incident_id,role,storage_path,created_at")
+      .in("incident_id", incidentIds)
+      .in("role", ["after", "event", "representative"])
+      .order("created_at", { ascending: false }),
+  ]);
+  if (camerasResult.error || evidenceResult.error) {
     throw new Error(
-      `Unable to load cleanup locations: ${camerasError.message}`,
+      `Unable to load cleanup evidence: ${camerasResult.error?.message ?? evidenceResult.error?.message}`,
     );
   }
+  const cameras = camerasResult.data;
+  const evidenceByIncident = new Map<string, string>();
+  for (const item of evidenceResult.data ?? []) {
+    if (!evidenceByIncident.has(item.incident_id)) {
+      evidenceByIncident.set(item.incident_id, item.storage_path);
+    }
+  }
+  const evidencePaths = [...evidenceByIncident.values()];
+  const snapshotPaths = (checksResult.data ?? []).flatMap((item) =>
+    item.snapshot_storage_path ? [item.snapshot_storage_path] : [],
+  );
+  const [evidenceUrlsResult, snapshotUrlsResult] = await Promise.all([
+    evidencePaths.length
+      ? supabase.storage
+          .from("incident-evidence")
+          .createSignedUrls(evidencePaths, 300)
+      : Promise.resolve({ data: [], error: null }),
+    snapshotPaths.length
+      ? supabase.storage
+          .from("cleanup-scene-checks")
+          .createSignedUrls(snapshotPaths, 300)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const evidenceUrls = new Map(
+    (evidenceUrlsResult.data ?? []).flatMap((item) =>
+      item.signedUrl ? [[item.path, item.signedUrl] as const] : [],
+    ),
+  );
+  const snapshotUrls = new Map(
+    (snapshotUrlsResult.data ?? []).flatMap((item) =>
+      item.signedUrl ? [[item.path, item.signedUrl] as const] : [],
+    ),
+  );
 
   const actors = mapActors(actorsResult.data as ActorRow[], user.id);
   const people = new Map(actors.map((person) => [person.id, person.label]));
@@ -121,6 +179,45 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     });
     historyMap.set(event.cleanup_case_id, history);
   }
+  const checksMap = new Map<string, CleanupCase["sceneChecks"]>();
+  for (const item of checksResult.data ?? []) {
+    const checks = checksMap.get(item.cleanup_case_id) ?? [];
+    checks.push({
+      id: item.id,
+      triggerKind: item.trigger_kind,
+      scheduledFor: item.scheduled_for,
+      status: item.status,
+      assessment: item.assessment,
+      groundedObservations: Array.isArray(item.grounded_observations)
+        ? (item.grounded_observations as string[])
+        : [],
+      limitations: Array.isArray(item.limitations)
+        ? (item.limitations as string[])
+        : [],
+      snapshotUrl: item.snapshot_storage_path
+        ? (snapshotUrls.get(item.snapshot_storage_path) ?? null)
+        : null,
+      capturedAt: item.captured_at,
+      analyzedAt: item.analysis_completed_at,
+      modelId: item.model_id,
+      errorMessage: item.error_message,
+      cancellationRequested: item.cancellation_requested,
+    });
+    checksMap.set(item.cleanup_case_id, checks);
+  }
+  const notificationsMap = new Map<string, CleanupCase["notifications"]>();
+  for (const item of notificationsResult.data ?? []) {
+    const notifications = notificationsMap.get(item.cleanup_case_id) ?? [];
+    notifications.push({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      message: item.message,
+      createdAt: item.created_at,
+      acknowledgedAt: item.acknowledged_at,
+    });
+    notificationsMap.set(item.cleanup_case_id, notifications);
+  }
 
   const cases = caseRows.flatMap((row): CleanupCase[] => {
     const incident = incidentMap.get(row.incident_id);
@@ -142,6 +239,7 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
         completionReport: row.completion_report,
         resolutionOutcome: row.resolution_outcome as ResolutionOutcome | null,
         resolutionNotes: row.resolution_notes,
+        resolutionSource: row.resolution_source,
         startedAt: row.started_at,
         resolvedAt: row.resolved_at,
         resolverLabel: row.resolved_by
@@ -161,7 +259,13 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
           cameraName: cameraId
             ? (cameraMap.get(cameraId) ?? "Unknown camera")
             : "Unknown camera",
+          originalEvidenceUrl: evidenceByIncident.get(row.incident_id)
+            ? (evidenceUrls.get(evidenceByIncident.get(row.incident_id)!) ??
+              null)
+            : null,
         },
+        sceneChecks: checksMap.get(row.id) ?? [],
+        notifications: notificationsMap.get(row.id) ?? [],
         history: historyMap.get(row.id) ?? [],
       },
     ];

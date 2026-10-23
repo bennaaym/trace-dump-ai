@@ -60,7 +60,26 @@ video-analytics check
 video-analytics analyze --camera CAMERA --start 2026-10-16T14:45:14Z --end 2026-10-16T14:45:28Z
 video-analytics export --camera CAMERA --start 2026-10-16T14:45:14Z --end 2026-10-16T14:45:28Z
 video-analytics monitor --camera CAMERA --dry-run --duration 60 --fps 5 --detect --yolo-model C:\models\yolo11n.pt
+video-analytics scene-check-worker
+video-analytics scene-check-worker --once
 ```
+
+## Cleanup deadline scene checks
+
+Apply `20261023150000_create_cleanup_scene_checks.sql`, then run
+`video-analytics scene-check-worker` as a separate Windows process on the
+XProtect/Hafnia machine. PostgreSQL durably schedules checks and claims them
+with expiring leases, so worker restarts do not create duplicate jobs. A due
+check captures two advancing `JPEGLiveSource` frames, stores the fresh snapshot
+in the private `cleanup-scene-checks` bucket, and analyzes the corresponding
+recent XProtect recording through the existing Hafnia model.
+
+The installed Hafnia Gateway accepts exactly one XProtect clip and does not
+support paired uploaded images. The worker therefore uses the original
+post-dumping evidence metadata as grounded context and records this limitation.
+Automatic case resolution is off by default and additionally requires a
+validated camera policy; simulated/looping cameras are never eligible. Each
+check that reaches Hafnia consumes one of the machine's daily requests.
 
 `--camera` accepts a GUID, exact camera name, or the 1-based index from `cameras`. Monitoring requires `--dry-run` unless an explicit simulation run and positive Hafnia request cap are provided. AI-positive results are written as `pending_review`; they are not treated as confirmed incidents.
 

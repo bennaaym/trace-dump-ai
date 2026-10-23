@@ -27,6 +27,7 @@ function cleanupCase(overrides = {}) {
     completionReport: null,
     resolutionOutcome: null,
     resolutionNotes: null,
+    resolutionSource: null,
     startedAt: null,
     resolvedAt: null,
     resolverLabel: null,
@@ -41,7 +42,10 @@ function cleanupCase(overrides = {}) {
       longitude: -0.58,
       locationSource: "real",
       cameraName: "Riverside Camera",
+      originalEvidenceUrl: null,
     },
+    sceneChecks: [],
+    notifications: [],
     history: [],
     ...overrides,
   };

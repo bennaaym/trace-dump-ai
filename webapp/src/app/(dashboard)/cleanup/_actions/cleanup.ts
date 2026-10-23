@@ -16,6 +16,23 @@ export const mutateCleanupCaseAction = actionClient
     } = await supabase.auth.getUser();
     if (!user) throw new Error("Authentication is required.");
 
+    if (parsedInput.action === "manual_recheck") {
+      const { error } = await supabase.rpc("request_cleanup_scene_recheck", {
+        p_case_id: parsedInput.caseId,
+      });
+      if (error) return { success: false as const, error: error.message };
+      revalidatePath("/cleanup");
+      return { success: true as const, error: null };
+    }
+    if (parsedInput.action === "acknowledge_notification") {
+      const { error } = await supabase.rpc("acknowledge_cleanup_notification", {
+        p_notification_id: parsedInput.notificationId!,
+      });
+      if (error) return { success: false as const, error: error.message };
+      revalidatePath("/cleanup");
+      return { success: true as const, error: null };
+    }
+
     const changes: Record<string, string | null> = {};
     if (parsedInput.teamId !== undefined) changes.team_id = parsedInput.teamId;
     if (parsedInput.slaHours !== undefined)
