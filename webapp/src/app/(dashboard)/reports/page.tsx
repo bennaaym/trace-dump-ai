@@ -8,6 +8,7 @@ import {
   Clock3,
   MapPinned,
   ShieldCheck,
+  Shovel,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -70,6 +71,61 @@ export default async function InsightsPage({
       <Card className="mt-5">
         <CardHeader>
           <SectionHeading
+            title="Cleanup Operations"
+            description="Human-managed cleanup cases created in the selected period"
+            href="/cleanup"
+            linkLabel="Manage cleanup"
+          />
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <CompactStat
+              label="Total cases"
+              value={String(data.cleanupOperations.total)}
+              icon={Shovel}
+            />
+            <CompactStat
+              label="Active"
+              value={String(data.cleanupOperations.active)}
+              icon={Clock3}
+            />
+            <CompactStat
+              label="Overdue"
+              value={String(data.cleanupOperations.overdue)}
+              icon={AlertTriangle}
+            />
+            <CompactStat
+              label="Resolved"
+              value={String(data.cleanupOperations.resolved)}
+              icon={CheckCircle2}
+            />
+            <CompactStat
+              label="Median resolution"
+              value={formatDuration(data.cleanupOperations.medianResolutionMs)}
+              icon={ShieldCheck}
+              note={
+                data.cleanupOperations.medianResolutionMs == null
+                  ? `Needs at least 2 resolved cases; ${data.cleanupOperations.validResolutionDurationCount} available`
+                  : undefined
+              }
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3 border-t pt-4 text-xs">
+            <span className="rounded-full bg-green-50 px-3 py-1.5 font-semibold text-green-700">
+              Cleanup completed:{" "}
+              {data.cleanupOperations.outcomes.cleanupCompleted}
+            </span>
+            <span className="rounded-full bg-sky-50 px-3 py-1.5 font-semibold text-sky-700">
+              Site already cleared:{" "}
+              {data.cleanupOperations.outcomes.siteAlreadyCleared}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-5">
+        <CardHeader>
+          <SectionHeading
             title="Incident activity over time"
             description={`${capitalize(data.aggregation)} counts for the selected period`}
           />
@@ -122,7 +178,7 @@ export default async function InsightsPage({
                         <td className="py-3 text-right">
                           <Link
                             href={`/operations?camera=${encodeURIComponent(location.cameraId)}`}
-                            aria-label={`View ${location.cameraName} on Monitor`}
+                            aria-label={`View ${location.cameraName} on Operations Map`}
                             className="inline-grid size-7 place-items-center rounded-md text-teal-700 hover:bg-teal-50"
                           >
                             <ChevronRight className="size-4" />

@@ -1,5 +1,6 @@
 import type {
   OperationsCamera,
+  OperationsCleanupCase,
   OperationsIncident,
   ReviewStatus,
 } from "../../_lib/types";
@@ -30,10 +31,18 @@ export interface IncidentRow {
   location_source: "real" | "simulated";
 }
 
+export interface CleanupRow {
+  id: string;
+  incident_id: string;
+  status: "awaiting_cleanup" | "in_progress" | "verification" | "resolved";
+  due_at: string | null;
+}
+
 export function buildOperationsData(
   cameraRows: CameraRow[],
   detectionRows: DetectionRow[],
   incidentRows: IncidentRow[],
+  cleanupRows: CleanupRow[] = [],
 ) {
   const detectionCamera = new Map(
     detectionRows.map((detection) => [detection.id, detection.camera_id]),
@@ -85,7 +94,31 @@ export function buildOperationsData(
     };
   });
 
-  return { cameras, incidents };
+  const incidentRowsById = new Map(incidentRows.map((item) => [item.id, item]));
+  const cameraNames = new Map(cameraRows.map((item) => [item.id, item.name]));
+  const cleanupCases: OperationsCleanupCase[] = cleanupRows.flatMap((item) => {
+    if (item.status === "resolved") return [];
+    const incident = incidentRowsById.get(item.incident_id);
+    const cameraId = incident
+      ? detectionCamera.get(incident.detection_id)
+      : null;
+    if (!incident || !cameraId) return [];
+    return [
+      {
+        id: item.id,
+        incidentId: item.incident_id,
+        cameraId,
+        cameraName: cameraNames.get(cameraId) ?? "Unknown camera",
+        status: item.status,
+        dueAt: item.due_at,
+        latitude: incident.latitude,
+        longitude: incident.longitude,
+        locationSource: incident.location_source,
+      },
+    ];
+  });
+
+  return { cameras, incidents, cleanupCases };
 }
 
 function countStatus(incidents: OperationsIncident[], status: ReviewStatus) {

@@ -158,6 +158,41 @@ test("applies the selected date range to incidents and analysis health", () => {
   assert.equal(result.analysisQuality.completed, 0);
 });
 
+test("calculates cleanup operations from real lifecycle timestamps", () => {
+  const result = buildInsightsData(
+    {
+      incidents: [],
+      detections,
+      reviews: [],
+      analyses: [],
+      cameras,
+      cleanupCases: [
+        cleanupCase("active", "in_progress", {
+          due_at: "2026-10-17T10:00:00Z",
+        }),
+        cleanupCase("completed", "resolved", {
+          resolution_outcome: "cleanup_completed",
+          resolved_at: "2026-10-18T12:00:00Z",
+        }),
+        cleanupCase("clear", "resolved", {
+          resolution_outcome: "site_already_cleared",
+          resolved_at: "2026-10-18T14:00:00Z",
+        }),
+      ],
+    },
+    "30",
+    referenceTime,
+  );
+
+  assert.equal(result.cleanupOperations.total, 3);
+  assert.equal(result.cleanupOperations.active, 1);
+  assert.equal(result.cleanupOperations.overdue, 1);
+  assert.equal(result.cleanupOperations.resolved, 2);
+  assert.equal(result.cleanupOperations.outcomes.cleanupCompleted, 1);
+  assert.equal(result.cleanupOperations.outcomes.siteAlreadyCleared, 1);
+  assert.equal(result.cleanupOperations.medianResolutionMs, 37 * 60 * 60_000);
+});
+
 function incident(id, detectionId, status, createdAt) {
   return {
     id,
@@ -165,5 +200,17 @@ function incident(id, detectionId, status, createdAt) {
     review_status: status,
     occurred_at: createdAt,
     created_at: createdAt,
+  };
+}
+
+function cleanupCase(id, status, overrides = {}) {
+  return {
+    id,
+    status,
+    due_at: null,
+    resolution_outcome: null,
+    created_at: "2026-10-17T00:00:00Z",
+    resolved_at: null,
+    ...overrides,
   };
 }

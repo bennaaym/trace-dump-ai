@@ -67,3 +67,47 @@ test("aggregates incidents only through their detection camera", () => {
   assert.equal(result.cameras[0].pendingIncidentCount, 1);
   assert.equal(result.cameras[1].incidentCount, 0);
 });
+
+test("maps only unresolved cleanup cases through real incident locations", () => {
+  const incidents = [
+    {
+      id: "incident-1",
+      detection_id: "detection-1",
+      review_status: "confirmed",
+      occurred_at: "2026-10-18T08:30:00Z",
+      created_at: "2026-10-18T08:40:00Z",
+      latitude: 44.84,
+      longitude: -0.58,
+      location_source: "simulated",
+    },
+  ];
+  const result = buildOperationsData(
+    cameras,
+    [
+      {
+        id: "detection-1",
+        camera_id: "camera-disabled",
+        created_at: "2026-10-18T09:00:00Z",
+      },
+    ],
+    incidents,
+    [
+      {
+        id: "cleanup-active",
+        incident_id: "incident-1",
+        status: "verification",
+        due_at: null,
+      },
+      {
+        id: "cleanup-resolved",
+        incident_id: "incident-1",
+        status: "resolved",
+        due_at: null,
+      },
+    ],
+  );
+  assert.equal(result.cleanupCases.length, 1);
+  assert.equal(result.cleanupCases[0].id, "cleanup-active");
+  assert.equal(result.cleanupCases[0].cameraName, "Disabled camera");
+  assert.equal(result.cleanupCases[0].locationSource, "simulated");
+});

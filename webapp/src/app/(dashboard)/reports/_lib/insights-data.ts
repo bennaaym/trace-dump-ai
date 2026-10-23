@@ -32,12 +32,22 @@ export interface InsightCameraRow {
   name: string;
 }
 
+export interface InsightCleanupRow {
+  id: string;
+  status: "awaiting_cleanup" | "in_progress" | "verification" | "resolved";
+  due_at: string | null;
+  resolution_outcome: "cleanup_completed" | "site_already_cleared" | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 interface BuildInsightsInput {
   incidents: InsightIncidentRow[];
   detections: InsightDetectionRow[];
   reviews: InsightReviewRow[];
   analyses: InsightAnalysisRow[];
   cameras: InsightCameraRow[];
+  cleanupCases?: InsightCleanupRow[];
 }
 
 const DAY_MS = 86_400_000;
@@ -79,6 +89,19 @@ export function buildInsightsData(
   const analyses = uniqueById(input.analyses).filter((analysis) =>
     inRange(analysis.created_at),
   );
+  const cleanupCases = uniqueById(input.cleanupCases ?? []).filter((item) =>
+    inRange(item.created_at),
+  );
+  const resolutionDurations = cleanupCases.flatMap((item) => {
+    if (!item.resolved_at) return [];
+    const created = Date.parse(item.created_at);
+    const resolved = Date.parse(item.resolved_at);
+    return Number.isFinite(created) &&
+      Number.isFinite(resolved) &&
+      resolved >= created
+      ? [resolved - created]
+      : [];
+  });
 
   const firstReviews = new Map<string, number>();
   for (const review of input.reviews) {
@@ -171,6 +194,29 @@ export function buildInsightsData(
         (analysis) =>
           analysis.status === "pending" || analysis.status === "processing",
       ).length,
+    },
+    cleanupOperations: {
+      total: cleanupCases.length,
+      active: cleanupCases.filter((item) => item.status !== "resolved").length,
+      overdue: cleanupCases.filter(
+        (item) =>
+          item.status !== "resolved" &&
+          item.due_at != null &&
+          Date.parse(item.due_at) < referenceMs,
+      ).length,
+      resolved: cleanupCases.filter((item) => item.status === "resolved")
+        .length,
+      medianResolutionMs:
+        resolutionDurations.length >= 2 ? median(resolutionDurations) : null,
+      validResolutionDurationCount: resolutionDurations.length,
+      outcomes: {
+        cleanupCompleted: cleanupCases.filter(
+          (item) => item.resolution_outcome === "cleanup_completed",
+        ).length,
+        siteAlreadyCleared: cleanupCases.filter(
+          (item) => item.resolution_outcome === "site_already_cleared",
+        ).length,
+      },
     },
   };
 }
