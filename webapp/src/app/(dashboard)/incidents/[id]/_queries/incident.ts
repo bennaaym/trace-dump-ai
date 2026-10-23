@@ -24,40 +24,51 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
   if (error) throw new Error(`Unable to load incident: ${error.message}`);
   if (!incident) return null;
 
-  const [detectionResult, analysisResult, evidenceResult, reviewsResult] =
-    await Promise.all([
-      supabase
-        .from("detections")
-        .select(
-          "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,recording_uri,metadata",
-        )
-        .eq("id", incident.detection_id)
-        .single(),
-      supabase
-        .from("analyses")
-        .select(
-          "id,status,hafnia_summary_id,prompt_version,model_id,dumping_detected,dumping_type,event_offset_seconds,description,uncertainty,started_at,completed_at",
-        )
-        .eq("id", incident.source_analysis_id)
-        .single(),
-      supabase
-        .from("evidence")
-        .select(
-          "id,role,storage_path,captured_at,offset_seconds,sha256,extraction_method,metadata",
-        )
-        .eq("incident_id", id)
-        .order("offset_seconds"),
-      supabase
-        .from("incident_reviews")
-        .select("id,reviewer_id,decision,notes,created_at")
-        .eq("incident_id", id)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    detectionResult,
+    analysisResult,
+    evidenceResult,
+    reviewsResult,
+    cleanupResult,
+  ] = await Promise.all([
+    supabase
+      .from("detections")
+      .select(
+        "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,recording_uri,metadata",
+      )
+      .eq("id", incident.detection_id)
+      .single(),
+    supabase
+      .from("analyses")
+      .select(
+        "id,status,hafnia_summary_id,prompt_version,model_id,dumping_detected,dumping_type,event_offset_seconds,description,uncertainty,started_at,completed_at",
+      )
+      .eq("id", incident.source_analysis_id)
+      .single(),
+    supabase
+      .from("evidence")
+      .select(
+        "id,role,storage_path,captured_at,offset_seconds,sha256,extraction_method,metadata",
+      )
+      .eq("incident_id", id)
+      .order("offset_seconds"),
+    supabase
+      .from("incident_reviews")
+      .select("id,reviewer_id,decision,notes,created_at")
+      .eq("incident_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("cleanup_cases")
+      .select("id,status,assigned_team_id,due_at,resolution_outcome")
+      .eq("incident_id", id)
+      .maybeSingle(),
+  ]);
   for (const result of [
     detectionResult,
     analysisResult,
     evidenceResult,
     reviewsResult,
+    ...(cleanupResult.error?.code === "42P01" ? [] : [cleanupResult]),
   ]) {
     if (result.error)
       throw new Error(
@@ -79,6 +90,16 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
     evidenceRows.map((item) => item.storage_path),
   );
   const analysis = analysisResult.data!;
+  const cleanup = cleanupResult.error ? null : cleanupResult.data;
+  let assignedTeamName: string | null = null;
+  if (cleanup?.assigned_team_id) {
+    const { data: team } = await supabase
+      .from("cleanup_teams")
+      .select("name")
+      .eq("id", cleanup.assigned_team_id)
+      .maybeSingle();
+    assignedTeamName = team?.name ?? "Unknown cleanup team";
+  }
   const viewerRole = user.app_metadata.trace_dump_role;
   if (viewerRole !== "operator" && viewerRole !== "admin") {
     throw new Error("Operator authorization is required.");
@@ -197,5 +218,18 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
           ? (user.email ?? "Current operator")
           : `Operator ${review.reviewer_id.slice(0, 8)}`,
     })),
+    cleanup: cleanup
+      ? {
+          id: cleanup.id,
+          status: cleanup.status as NonNullable<
+            IncidentDetail["cleanup"]
+          >["status"],
+          assignedTeamId: cleanup.assigned_team_id,
+          assignedTeamName,
+          dueAt: cleanup.due_at,
+          resolutionOutcome: cleanup.resolution_outcome as
+            "cleanup_completed" | "site_already_cleared" | null,
+        }
+      : null,
   };
 }

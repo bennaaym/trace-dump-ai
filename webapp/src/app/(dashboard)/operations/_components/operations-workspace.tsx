@@ -18,8 +18,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "../../_lib/format";
+import { CleanupStatusBadge } from "../../cleanup/_components/cleanup-status";
 import type {
   OperationsCamera,
+  OperationsCleanupCase,
   OperationsIncident,
   OperationsMapData,
   ReviewStatus,
@@ -52,9 +54,13 @@ export function OperationsWorkspace({
       ? initialCameraId
       : null,
   );
+  const [selectedCleanupId, setSelectedCleanupId] = useState<string | null>(
+    null,
+  );
   const [showCameras, setShowCameras] = useState(true);
   const [showIncidents, setShowIncidents] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showCleanup, setShowCleanup] = useState(false);
 
   const handleHeatmapChange = (checked: boolean) => {
     setShowHeatmap(checked);
@@ -136,16 +142,18 @@ export function OperationsWorkspace({
     displayCameras.find(
       (camera) => camera.id === selectedId && visibleIds.has(camera.id),
     ) ?? null;
+  const selectedCleanup =
+    data.cleanupCases.find((item) => item.id === selectedCleanupId) ?? null;
   return (
     <div className="mx-auto max-w-[1700px]">
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
-            Monitor
+            Operations Map
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Monitor camera locations and suspected dumping activity across
-            Bordeaux.
+            Monitor camera locations, suspected dumping activity, and active
+            cleanup work across Bordeaux.
           </p>
         </div>
       </header>
@@ -237,6 +245,11 @@ export function OperationsWorkspace({
             onChange={handleHeatmapChange}
             label="Heatmap"
           />
+          <LayerToggle
+            checked={showCleanup}
+            onChange={setShowCleanup}
+            label="Cleanup"
+          />
           <span className="ml-auto text-slate-400">
             {mappedIncidentCount} matching incident
             {mappedIncidentCount === 1 ? "" : "s"} · {filteredCameras.length} of{" "}
@@ -250,17 +263,37 @@ export function OperationsWorkspace({
           cameras={filteredCameras}
           incidents={filteredIncidents}
           heatIncidents={heatIncidents}
+          cleanupCases={data.cleanupCases}
           selectedId={selectedId}
           showCameras={showCameras}
           showIncidents={showIncidents}
           showHeatmap={showHeatmap}
-          onSelect={setSelectedId}
+          showCleanup={showCleanup}
+          onSelect={(id) => {
+            setSelectedCleanupId(null);
+            setSelectedId(id);
+          }}
+          onSelectCleanup={(id) => {
+            setSelectedId(null);
+            setSelectedCleanupId(id);
+          }}
         />
-        <CameraPanel
-          camera={selectedCamera}
-          summary={{ cameras: displayCameras, incidents: periodIncidents }}
-          onClose={() => setSelectedId(null)}
-        />
+        {selectedCleanup ? (
+          <CleanupPanel
+            cleanupCase={selectedCleanup}
+            onClose={() => setSelectedCleanupId(null)}
+          />
+        ) : (
+          <CameraPanel
+            camera={selectedCamera}
+            summary={{
+              cameras: displayCameras,
+              incidents: periodIncidents,
+              cleanupCases: data.cleanupCases,
+            }}
+            onClose={() => setSelectedId(null)}
+          />
+        )}
       </div>
     </div>
   );
@@ -270,32 +303,41 @@ function OperationsMap({
   cameras,
   incidents,
   heatIncidents,
+  cleanupCases,
   selectedId,
   showCameras,
   showIncidents,
   showHeatmap,
+  showCleanup,
   onSelect,
+  onSelectCleanup,
 }: {
   cameras: OperationsCamera[];
   incidents: OperationsIncident[];
   heatIncidents: OperationsIncident[];
+  cleanupCases: OperationsCleanupCase[];
   selectedId: string | null;
   showCameras: boolean;
   showIncidents: boolean;
   showHeatmap: boolean;
+  showCleanup: boolean;
   onSelect: (id: string) => void;
+  onSelectCleanup: (id: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const cameraLayerRef = useRef<LayerGroup | null>(null);
   const incidentLayerRef = useRef<LayerGroup | null>(null);
+  const cleanupLayerRef = useRef<LayerGroup | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectRef = useRef(onSelect);
+  const onSelectCleanupRef = useRef(onSelectCleanup);
   const [mapGeneration, setMapGeneration] = useState(0);
   useEffect(() => {
     onSelectRef.current = onSelect;
-  }, [onSelect]);
+    onSelectCleanupRef.current = onSelectCleanup;
+  }, [onSelect, onSelectCleanup]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -310,6 +352,9 @@ function OperationsMap({
       const incidentPane = map.createPane("operations-incidents");
       incidentPane.style.zIndex = "650";
       incidentPane.style.pointerEvents = "auto";
+      const cleanupPane = map.createPane("operations-cleanup");
+      cleanupPane.style.zIndex = "660";
+      cleanupPane.style.pointerEvents = "auto";
       leaflet
         .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors",
@@ -319,6 +364,7 @@ function OperationsMap({
       leaflet.control.zoom({ position: "bottomright" }).addTo(map);
       cameraLayerRef.current = leaflet.layerGroup().addTo(map);
       incidentLayerRef.current = leaflet.layerGroup().addTo(map);
+      cleanupLayerRef.current = leaflet.layerGroup().addTo(map);
       leafletRef.current = leaflet;
       mapRef.current = map;
       setMapGeneration((generation) => generation + 1);
@@ -329,6 +375,7 @@ function OperationsMap({
       mapRef.current = null;
       cameraLayerRef.current = null;
       incidentLayerRef.current = null;
+      cleanupLayerRef.current = null;
       leafletRef.current = null;
     };
   }, []);
@@ -359,6 +406,36 @@ function OperationsMap({
       }
     }
   }, [incidents, mapGeneration, showIncidents]);
+
+  useEffect(() => {
+    if (!mapGeneration) return;
+    const leaflet = leafletRef.current;
+    const layer = cleanupLayerRef.current;
+    if (!leaflet || !layer) return;
+    layer.clearLayers();
+    if (!showCleanup) return;
+    const colors = {
+      awaiting_cleanup: "#f59e0b",
+      in_progress: "#38b2f6",
+      verification: "#14b8a6",
+    };
+    for (const cleanupCase of cleanupCases) {
+      if (cleanupCase.latitude == null || cleanupCase.longitude == null)
+        continue;
+      leaflet
+        .circleMarker([cleanupCase.latitude, cleanupCase.longitude], {
+          pane: "operations-cleanup",
+          radius: 9,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: colors[cleanupCase.status],
+          fillOpacity: 1,
+        })
+        .bindTooltip(`Cleanup · ${cleanupCase.cameraName}`)
+        .on("click", () => onSelectCleanupRef.current(cleanupCase.id))
+        .addTo(layer);
+    }
+  }, [cleanupCases, mapGeneration, showCleanup]);
 
   useEffect(() => {
     if (!mapGeneration) return;
@@ -657,6 +734,61 @@ function CameraPanel({
           </div>
         </div>
       )}
+    </aside>
+  );
+}
+
+function CleanupPanel({
+  cleanupCase,
+  onClose,
+}: {
+  cleanupCase: OperationsCleanupCase;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="surface h-fit overflow-hidden xl:sticky xl:top-20">
+      <div className="flex items-start justify-between border-b p-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+            Cleanup case
+          </p>
+          <h2 className="mt-1 text-base font-bold">
+            CL-{cleanupCase.id.slice(0, 8).toUpperCase()}
+          </h2>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid size-8 place-items-center rounded-lg hover:bg-slate-100"
+          aria-label="Close cleanup summary"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="p-4">
+        <CleanupStatusBadge status={cleanupCase.status} />
+        <dl className="mt-4 grid grid-cols-[90px_1fr] gap-y-2 text-xs">
+          <dt className="text-slate-500">Location</dt>
+          <dd>{cleanupCase.cameraName}</dd>
+          <dt className="text-slate-500">Deadline</dt>
+          <dd>
+            {cleanupCase.dueAt ? formatDateTime(cleanupCase.dueAt) : "Not set"}
+          </dd>
+          <dt className="text-slate-500">Source</dt>
+          <dd>
+            {cleanupCase.locationSource === "simulated"
+              ? "Simulated incident location"
+              : "Incident location snapshot"}
+          </dd>
+        </dl>
+        <Link
+          href={`/cleanup?case=${cleanupCase.id}`}
+          className="mt-4 flex h-9 items-center justify-center gap-2 rounded-lg bg-teal-600 px-3 text-xs font-semibold text-white hover:bg-teal-700"
+        >
+          Open cleanup case
+          <ChevronRight className="size-3.5" />
+        </Link>
+      </div>
     </aside>
   );
 }

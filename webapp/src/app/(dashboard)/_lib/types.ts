@@ -41,6 +41,19 @@ export interface OperationsCamera extends Omit<
 export interface OperationsMapData {
   cameras: OperationsCamera[];
   incidents: OperationsIncident[];
+  cleanupCases: OperationsCleanupCase[];
+}
+
+export interface OperationsCleanupCase {
+  id: string;
+  incidentId: string;
+  cameraId: string;
+  cameraName: string;
+  status: "awaiting_cleanup" | "in_progress" | "verification";
+  dueAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationSource: "real" | "simulated";
 }
 
 interface EvidenceRecord {
@@ -126,6 +139,14 @@ export interface IncidentDetail extends IncidentListItem {
     createdAt: string;
     reviewerLabel: string;
   }>;
+  cleanup: null | {
+    id: string;
+    status: "awaiting_cleanup" | "in_progress" | "verification" | "resolved";
+    assignedTeamId: string | null;
+    assignedTeamName: string | null;
+    dueAt: string | null;
+    resolutionOutcome: "cleanup_completed" | "site_already_cleared" | null;
+  };
 }
 
 export interface IncidentPageResult {

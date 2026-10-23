@@ -11,6 +11,9 @@ import { ReviewStatusBadge } from "../_components/incident-status";
 import { IncidentTabs } from "./_components/incident-tabs";
 import { LocalDateTime } from "./_components/local-date-time";
 import { ReviewActions } from "./_components/review-actions";
+import { CleanupStatusBadge } from "../../cleanup/_components/cleanup-status";
+import { cleanupOutcomeLabel } from "../../cleanup/_lib/cleanup-data";
+import { formatDateTime } from "../../_lib/format";
 import { safeIncidentListReturn } from "./_lib/workspace-navigation";
 import { getIncident } from "./_queries/incident";
 
@@ -88,10 +91,48 @@ export default async function IncidentPage({
       </header>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <IncidentTabs incident={incident} />
-        <ReviewActions
-          key={`${incident.id}:${incident.reviewStatus}:${incident.reviews[0]?.id ?? "none"}`}
-          incident={incident}
-        />
+        <div className="space-y-5">
+          <ReviewActions
+            key={`${incident.id}:${incident.reviewStatus}:${incident.reviews[0]?.id ?? "none"}`}
+            incident={incident}
+          />
+          {incident.reviewStatus === "confirmed" && incident.cleanup && (
+            <aside className="surface p-5" aria-label="Linked cleanup case">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-heading text-sm font-bold">Cleanup</h2>
+                <CleanupStatusBadge status={incident.cleanup.status} />
+              </div>
+              <dl className="mt-4 grid grid-cols-[82px_1fr] gap-y-2 text-xs">
+                <dt className="text-slate-500">Case</dt>
+                <dd className="font-mono">
+                  CL-{incident.cleanup.id.slice(0, 8).toUpperCase()}
+                </dd>
+                <dt className="text-slate-500">Cleanup team</dt>
+                <dd>{incident.cleanup.assignedTeamName ?? "Unassigned"}</dd>
+                <dt className="text-slate-500">Deadline</dt>
+                <dd>
+                  {incident.cleanup.dueAt
+                    ? formatDateTime(incident.cleanup.dueAt)
+                    : "Not set"}
+                </dd>
+                {incident.cleanup.resolutionOutcome && (
+                  <>
+                    <dt className="text-slate-500">Outcome</dt>
+                    <dd>
+                      {cleanupOutcomeLabel(incident.cleanup.resolutionOutcome)}
+                    </dd>
+                  </>
+                )}
+              </dl>
+              <Link
+                href={`/cleanup?case=${incident.cleanup.id}`}
+                className="mt-4 inline-flex rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700"
+              >
+                Open cleanup case
+              </Link>
+            </aside>
+          )}
+        </div>
       </div>
     </>
   );

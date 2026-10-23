@@ -14,6 +14,7 @@ import {
   LogOut,
   MapPinned,
   Menu,
+  Shovel,
   Settings2,
   ShieldCheck,
   X,
@@ -23,10 +24,11 @@ import { cn } from "@/lib/utils";
 import { logoutAction } from "../_actions/logout";
 
 const navigation = [
-  { href: "/operations", label: "Monitor", icon: MapPinned },
+  { href: "/operations", label: "Operations Map", icon: MapPinned },
   { href: "/incidents", label: "Incidents", icon: ShieldCheck },
   { href: "/review", label: "Review Queue", icon: ClipboardCheck },
   { href: "/cases", label: "Cases", icon: FolderKanban },
+  { href: "/cleanup", label: "Cleanup", icon: Shovel },
   { href: "/reports", label: "Insights", icon: ChartNoAxesCombined },
 ] as const;
 
