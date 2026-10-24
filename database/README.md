@@ -132,7 +132,7 @@ Prerequisites are the Supabase CLI and its local container runtime. A plain Post
 
 ## Verification status
 
-The existing development database supports the live worker, evidence, review, and playback flows. The two new migrations `20261023190000_requeue_expired_incident_recordings.sql` and `20261024000000_incident_priority_adjustments.sql` remain unapplied as of the 24 October 2026 handoff. Local PostgreSQL-compatible tests passed for their requeue and priority authorization/history behavior; live priority adjustment and expired-derivative requeue acceptance remain pending. See the [feature handoff](../docs/MOHSIN_FEATURE_HANDOFF.md).
+The existing development database supports the live worker, evidence, review, and playback flows. On 24 October 2026 the user applied `20261023190000_requeue_expired_incident_recordings.sql` and `20261024000000_incident_priority_adjustments.sql`. Authenticated live UI tests then passed for priority change/reset with persistent history, and expired-derivative requeue followed by worker preparation and browser loading. Local PostgreSQL-compatible authorization/history tests also passed. See the [feature handoff](../docs/MOHSIN_FEATURE_HANDOFF.md). Other databases still need the ordered migration history.
 
 For a new deployment, validate the full ordered migration history on a clean Supabase database, including:
 

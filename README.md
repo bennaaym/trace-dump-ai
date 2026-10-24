@@ -2,7 +2,7 @@
 
 TraceDump AI detects and helps investigate suspected waste-dumping activity in surveillance recordings. It combines XProtect video monitoring and Hafnia analysis with a Supabase-backed investigator web application. All automated classifications remain subject to human review.
 
-For the Mohsin branch features, demonstration steps, verification results, and pending database setup, see [the feature handoff](docs/MOHSIN_FEATURE_HANDOFF.md).
+For the Mohsin branch features, demonstration steps, verification results, and database setup, see [the feature handoff](docs/MOHSIN_FEATURE_HANDOFF.md).
 
 ## Architecture
 
@@ -65,4 +65,4 @@ Install `.[dev,detection]` only when Torch and Ultralytics are required. Model w
 
 The application includes authenticated camera monitoring, suspected incident review, source-linked investigation timelines, optional local number plate recognition, rule-based priority, recording playback, and downloadable investigation reports. Live operation requires XProtect, Hafnia, Supabase, the local export/transcoding tools, and supported model weights.
 
-The latest real-video test exercised acquisition through the database and UI. Reviewer priority changes and expired-recording requeue still require the two migrations listed in the feature handoff and their live acceptance tests. Hafnia's descriptions and event times remain inconsistent; unsupported event markers are withheld, and all results require human review.
+The latest real-video test exercised acquisition through the database and UI. The two investigation migrations are active in the development database, and live UI tests passed for reviewer priority changes/reset and expired-recording requeue/preparation. Other environments must apply the ordered migrations. Hafnia's descriptions and event times remain inconsistent; unsupported event markers are withheld, and all results require human review.

@@ -1,6 +1,6 @@
 # Mohsin branch: investigation features
 
-Updated 24 October 2026 (UTC). This document describes the implemented branch changes and their verification status for team review. The remaining SQL deployment has been deferred by the user; this branch is not a claim that every live acceptance test has passed.
+Updated 24 October 2026 (UTC). This document describes the implemented branch changes and their verification status for team review. The user has applied the two investigation migrations to the development database, and the remaining live priority and expired-recording acceptance tests passed. Model accuracy limitations remain separate from integration verification.
 
 ## Features available for review
 
@@ -11,7 +11,7 @@ Updated 24 October 2026 (UTC). This document describes the implemented branch ch
 | Investigation timeline | Show model observations, approximate times where supplied, linked original frames, alternative explanations, and assessment conflicts in AI Analysis. Historical incidents without structured observations do not receive invented timelines. |
 | Number plate evidence | Optional local CPU detector/OCR creates a separate plate card with text or Unreadable, a crop, its original source frame, and a playback link. Plate artifacts are separated from the general evidence strip. Vehicle involvement stays unverified. |
 | Automatic priority | Deterministic rules use seven observable risk factors. High: roadway/path obstruction, smoke, or leakage. Medium: large/scattered material or proximity to an entrance/crossing. Low requires all seven explicit no findings; otherwise Unknown. Priority depends on model findings and is not ground truth. |
-| Reviewer priority | Operators can set High/Medium/Low with a reason, or restore automatic assessment. Append-only history and stale-write checks protect concurrent reviews. Requires the pending priority migration. |
+| Reviewer priority | Operators can set High/Medium/Low with a reason, or restore automatic assessment. Append-only history and stale-write checks protect concurrent reviews. Requires the priority migration, now verified in the development database. |
 | Investigation report | Download an authenticated, self-contained HTML report with embedded evidence images, analysis, plate results, priority, review history, and provenance. Open offline and print to PDF. Video is excluded; missing or oversized images are reported rather than silently invented. |
 | Versioned detection prompts | Default `dumping_v7.txt` requests visible deposit evidence, structured risks, chronology, and a linked event observation. Requests include the real interval duration. Earlier prompts remain available for provenance. Raw responses and historical classifications are preserved. |
 
@@ -21,18 +21,18 @@ Updated 24 October 2026 (UTC). This document describes the implemented branch ch
 
 The Python worker owns acquisition, model integration, evidence extraction, and persistence. Next.js owns investigator presentation and validated operator actions. Supabase owns application data, private objects, and authorization. Credentials stay server-side. A positive model answer creates a suspected incident awaiting human review; negative/uncertain answers do not create an incident just to complete a demonstration.
 
-## Database setup still required
+## Database setup
 
-For the existing development database, apply these pending migrations in order through its Supabase SQL Editor:
+These migrations have been applied to the existing development database. For another environment where they are absent, apply them in order through its Supabase SQL Editor:
 
 1. [`20261023190000_requeue_expired_incident_recordings.sql`](../database/migrations/20261023190000_requeue_expired_incident_recordings.sql)
 2. [`20261024000000_incident_priority_adjustments.sql`](../database/migrations/20261024000000_incident_priority_adjustments.sql)
 
-Open each file, copy its SQL into a new query in the correct project, and run it. These migrations assume the earlier repository migrations already exist. A new environment needs the full ordered migration history; see [database README](../database/README.md). The original workstation also has a combined local script at `.runtime/verification/apply-remaining-migrations.sql`; the versioned files above are the canonical, shared sources.
+Open each unapplied file, copy its SQL into a new query in the correct project, and run it. Do not rerun the priority table creation on the already updated development database. These migrations assume the earlier repository migrations already exist. A new environment needs the full ordered migration history; see [database README](../database/README.md). The original workstation also has a combined local script at `.runtime/verification/apply-remaining-migrations.sql`; the versioned files above are the canonical, shared sources.
 
 The configured service-role API key cannot execute arbitrary database DDL. No database management connection was configured, so remote application was left to the project administrator. No incident deletion or fabricated risk backfill is required. The UI handles an absent priority table by disabling adjustments.
 
-After applying SQL, verify an operator can save a priority with a reason, see history after refresh, and reset to automatic. Verify an expired derivative can be requested again, progress through preparing, and become playable. Those two live acceptance paths remain pending; local migration/security tests passed.
+After applying SQL in another environment, verify an operator can save a priority with a reason, see history after refresh, and reset to automatic. Verify an expired derivative can be requested again, progress through preparing, and become playable. Both live acceptance paths passed on the development database on 24 October 2026; local migration/security tests also passed.
 
 ## Run the real-video demo
 
@@ -59,14 +59,15 @@ The command submits a real Hafnia request when activity is selected. Keep the re
 - A fresh real XProtect → Hafnia → Supabase → authenticated UI run on 24 October captured 196 unique frames with zero acquisition failures and created suspected incident `1610ff1b-eac8-55f0-9ce1-f58a02e9919f`. Summary: `dab0bdd5-21b1-4e72-b8b4-291df2e6dee9`. Synchronization finished without pending writes.
 - That incident displayed OCR `AHN9916`, three source-linked observations, automatic Low priority from the returned risk fields, and a withheld unsupported event marker. The report download and offline embedded images passed authenticated browser checks. Anonymous access was denied.
 - A real recording on incident `a227bd1d-cc9e-51be-8b4b-c7ec385390f8` played and sought successfully. Natural five-minute signed-link renewal preserved its paused position at 12 seconds.
+- After migration application, the authenticated UI saved Medium on test incident `1610ff1b-eac8-55f0-9ce1-f58a02e9919f`, preserved it after refresh, and restored automatic Low. Both explicitly labeled test adjustments remain in the append-only history; the incident stays pending human review.
+- The same incident's recording retention was temporarily expired to exercise the real retry path. Refresh playback requeued it, the API returned preparing despite the old deadline, and a scoped playback worker prepared the recording. The browser loaded the 46.125-second video, and the final database row was available with a future retention deadline. Local artifacts: `.runtime/verification/remaining-priority-expiry-result.json` and `remaining-priority-expiry.png`. No additional Hafnia request was needed.
 
 The live development incident can be opened at `/incidents/1610ff1b-eac8-55f0-9ce1-f58a02e9919f` on an app connected to that same database. Local screenshots, raw evaluations, downloaded reports, and recordings remain on the original workstation under `.runtime/verification/` or `video-analytics/runs/`; they are excluded from the repository.
 
 ## Limitations and remaining work
 
-1. Apply the two pending migrations and complete the live priority override/reset and expired-recording requeue tests.
-2. Improve and benchmark model accuracy using human-reviewed examples. Controlled prompt comparisons still produced contradictions, repeated timestamps, missing event references, and varying risk findings. Stronger prompts have not solved detection correctness.
-3. Validate event timing against the source video. The claimed 0.3-second trunk release contradicted the inspected source frame; the current contract withholds such unsupported event markers. Observation timestamps can still be inaccurate even when they parse successfully.
-4. Plate sampling is bounded and may miss brief appearances. OCR text requires visual confirmation and never establishes involvement by itself.
+1. Improve and benchmark model accuracy using human-reviewed examples. Controlled prompt comparisons still produced contradictions, repeated timestamps, missing event references, and varying risk findings. Stronger prompts have not solved detection correctness.
+2. Validate event timing against the source video. The claimed 0.3-second trunk release contradicted the inspected source frame; the current contract withholds such unsupported event markers. Observation timestamps can still be inaccurate even when they parse successfully.
+3. Plate sampling is bounded and may miss brief appearances. OCR text requires visual confirmation and never establishes involvement by itself.
 
 No new runtime environment variables were introduced for these investigation features. Optional plate dependencies are declared in `video-analytics/pyproject.toml`. Source, migrations, tests, and documentation are shared; environment secrets, model weights, runtime exports, and private evidence are not.
