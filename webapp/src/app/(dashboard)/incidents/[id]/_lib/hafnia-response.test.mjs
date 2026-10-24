@@ -143,3 +143,17 @@ test("normalizes a structured JSON response without adding fields", () => {
     },
   );
 });
+
+test("model array fields retain uncertainty and visible descriptions", () => {
+  const parsed = normalizeHafniaResponse(
+    JSON.stringify({
+      schema_version: "investigation_v1",
+      uncertainty: ["Transfer obscured", "Timing unknown"],
+      people: [
+        { description: "Synthetic person", actions: "Synthetic action" },
+      ],
+    }),
+  );
+  assert.equal(parsed.uncertainties, "Transfer obscured\nTiming unknown");
+  assert.equal(parsed.peopleInvolved, "Synthetic person\nSynthetic action");
+});

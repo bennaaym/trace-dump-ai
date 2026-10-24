@@ -2,9 +2,10 @@ export function validEventOffset(value: number | null, duration: number) {
   if (
     value == null ||
     !Number.isFinite(value) ||
-    value <= 0 ||
+    value < 0 ||
+    !Number.isFinite(duration) ||
     duration <= 0 ||
-    value > duration
+    value >= duration
   ) {
     return null;
   }
@@ -20,4 +21,19 @@ export function clampSeekOffset(value: number, duration: number) {
 export function timelinePosition(value: number | null, duration: number) {
   if (value == null || duration <= 0) return 0;
   return Math.min(100, Math.max(0, (value / duration) * 100));
+}
+
+export function recordingAccessStatus(
+  status: string | undefined,
+  expiresAt: string | null | undefined,
+  now: number,
+): "available" | "preparing" | "unavailable" | "failed" | "expired" {
+  if (status === "pending" || status === "preparing") return "preparing";
+  if (
+    status === "expired" ||
+    (status === "available" && expiresAt && Date.parse(expiresAt) <= now)
+  )
+    return "expired";
+  if (status === "available" || status === "failed") return status;
+  return "unavailable";
 }

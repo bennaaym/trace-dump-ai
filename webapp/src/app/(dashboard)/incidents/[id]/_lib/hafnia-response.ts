@@ -28,6 +28,7 @@ type DetailKey = (typeof fields)[keyof typeof fields];
 export function normalizeHafniaResponse(
   response: string | null,
 ): HafniaInvestigationDetails {
+  response = response?.trim().replace(/^```json\s*|\s*```$/g, "") ?? null;
   const structured = parseJsonResponse(response);
   if (structured) return structured;
 
@@ -81,7 +82,7 @@ function parseJsonResponse(
     const get = (...aliases: string[]) => {
       const aliasSet = new Set(aliases.map(normalizeKey));
       const match = entries.find(([key]) => aliasSet.has(normalizeKey(key)));
-      return typeof match?.[1] === "string" ? availableValue(match[1]) : null;
+      return availableValue(narrativeText(match?.[1]));
     };
     return {
       sequenceOfEvents: get("sequence of events", "sequence", "description"),
@@ -100,9 +101,26 @@ function normalizeKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function availableValue(value: string | undefined) {
+function availableValue(value: string | null | undefined) {
   if (!value || /^(unknown|unavailable|not provided|n\/a)$/i.test(value)) {
     return null;
   }
   return value;
+}
+
+function narrativeText(value: unknown, depth = 0): string | null {
+  if (typeof value === "string") return value.trim().slice(0, 8000) || null;
+  if (depth >= 2 || !value || typeof value !== "object") return null;
+  const entries = Array.isArray(value)
+    ? value.slice(0, 12)
+    : ["description", "actions", "state", "evidence", "limitations"].map(
+        (key) => (value as Record<string, unknown>)[key],
+      );
+  return (
+    entries
+      .map((item) => narrativeText(item, depth + 1))
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 8000) || null
+  );
 }

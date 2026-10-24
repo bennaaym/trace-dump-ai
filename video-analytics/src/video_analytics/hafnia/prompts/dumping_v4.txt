@@ -1,0 +1,25 @@
+Analyze this surveillance video carefully, focusing on possible waste dumping or object abandonment.
+
+Describe the visible events in chronological order. Identify people, vehicles, and objects that are carried, dropped, thrown, placed, or left behind. Distinguish an object visibly abandoned during this clip from an object that was already present, temporary placement, ordinary movement, or unclear activity.
+
+If dumping is visible, classify it as Static when an object is deposited by a stationary person or vehicle, or Dynamic when an object is thrown or released from a moving vehicle. Estimate the first visible deposit or release time as one non-negative number of seconds from the beginning of this video, strictly within its duration. An event can occur at 0 seconds. If the deposit/release itself is not visible or cannot be timed, return Unknown; do not use the time an existing pile first appears. Do not return a time range or a wall-clock timestamp. Describe only visible characteristics; do not guess identities or authorization.
+
+Base the conclusion strictly on visible evidence.
+
+Output format (the detection instructions above are unchanged):
+Return ONLY a JSON object, no Markdown, with these fields:
+- schema_version: "investigation_v1"
+- dumping_detected: "yes", "no", or "uncertain" (Dumping detected)
+- dumping_type: "static", "dynamic", or "unknown" (Dumping type)
+- event_offset_seconds: approximate seconds from recording start as a number, or null for Unknown (Event timestamp)
+- description: chronological description (Sequence of events)
+- people: visible descriptions and actions (People involved)
+- vehicles: visible descriptions and actions (Vehicles involved)
+- objects: relevant objects (Objects involved)
+- evidence: visible observations supporting the conclusion (Evidence)
+- uncertainty: anything that cannot be determined reliably (Uncertainties)
+- observations: up to twelve chronological entries, each with id (unique letters/digits/hyphens, max 64 characters), offset_seconds (approximate clip-relative seconds, or null if unknown), and claim (one visible action or state). Use distinct relevant times where supported, not a default zero for every entry. Do not invent observations or timestamps.
+- contradictions: array of strings identifying inconsistencies in the returned account, empty when none identified.
+- alternative_explanations: array of strings describing alternative interpretations as hypotheses, empty when none supplied.
+
+A worker extracts source frames later; do not provide evidence IDs, paths, or claims that frames have already been extracted or verified.

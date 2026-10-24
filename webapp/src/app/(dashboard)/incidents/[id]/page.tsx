@@ -47,18 +47,27 @@ export default async function IncidentPage({
             <span>{incident.camera.name}</span>
             {incident.latitude != null && (
               <>
-                <span aria-hidden="true">·</span>
+                <span aria-hidden="true">Â·</span>
                 <span>
                   {incident.latitude.toFixed(5)},{" "}
                   {incident.longitude?.toFixed(5)}
                 </span>
               </>
             )}
-            <span aria-hidden="true">·</span>
+            <span aria-hidden="true">Â·</span>
             <LocalDateTime value={incident.occurredAt ?? incident.createdAt} />
           </p>
         </div>
-        <Badge tone="teal">Investigation workspace</Badge>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={`/api/incidents/${incident.id}/report`}
+            download
+            className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-100"
+          >
+            Download report
+          </a>
+          <Badge tone="teal">Investigation workspace</Badge>
+        </div>
       </header>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
         <IncidentTabs incident={incident} />

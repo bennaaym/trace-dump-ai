@@ -1,6 +1,8 @@
 # TraceDump AI
 
-TraceDump AI is a foundation for detecting and investigating suspected waste-dumping activity in surveillance recordings. The planned system combines video monitoring and AI-assisted analysis with an investigator-facing web application. All automated classifications remain subject to human review.
+TraceDump AI detects and helps investigate suspected waste-dumping activity in surveillance recordings. It combines XProtect video monitoring and Hafnia analysis with a Supabase-backed investigator web application. All automated classifications remain subject to human review.
+
+For the Mohsin branch features, demonstration steps, verification results, and pending database setup, see [the feature handoff](docs/MOHSIN_FEATURE_HANDOFF.md).
 
 ## Architecture
 
@@ -57,8 +59,10 @@ Install `.[dev,detection]` only when Torch and Ultralytics are required. Model w
 
 ## Database and AI guidance
 
-`database/migrations/` will hold ordered Supabase SQL migrations once the schema is designed. It does not contain a speculative schema. Coding rules live in `.ai/rules/`, concise project context is in `.ai/context/project.md`, and `.ai/skills/` is intentionally empty pending the official hackathon skills.
+`database/migrations/` contains ordered Supabase SQL migrations for application records, operator authorization, private evidence and recording storage, review history, and priority adjustments. See [database setup](database/README.md) before applying migrations. Coding rules live in `.ai/rules/`, and project context is in `.ai/context/project.md`.
 
 ## Current status
 
-The existing Python worker and mocked tests are migrated into the package structure. Its live XProtect, Hafnia, MIP SDK, ffprobe, and YOLO paths still require the corresponding local services, tools, credentials, and model weights. Supabase persistence, authentication, and dashboard features remain unimplemented.
+The application includes authenticated camera monitoring, suspected incident review, source-linked investigation timelines, optional local number plate recognition, rule-based priority, recording playback, and downloadable investigation reports. Live operation requires XProtect, Hafnia, Supabase, the local export/transcoding tools, and supported model weights.
+
+The latest real-video test exercised acquisition through the database and UI. Reviewer priority changes and expired-recording requeue still require the two migrations listed in the feature handoff and their live acceptance tests. Hafnia's descriptions and event times remain inconsistent; unsupported event markers are withheld, and all results require human review.

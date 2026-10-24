@@ -20,6 +20,7 @@ import {
   timelinePosition,
   validEventOffset,
 } from "../_lib/playback-state";
+import { recordingEvidence } from "../_lib/plate-evidence";
 import { preferredEvidence } from "./evidence-viewer-state";
 
 type Evidence = IncidentDetail["evidence"][number];
@@ -31,21 +32,25 @@ export function IncidentPlayback({
   incident: IncidentDetail;
   initialSeek: string | null;
 }) {
-  const preferred = preferredEvidence(incident.evidence);
+  const evidence = recordingEvidence(incident.evidence);
+  const preferred = preferredEvidence(evidence);
   const [selectedId, setSelectedId] = useState(preferred?.id ?? null);
   const [status, setStatus] = useState<PlaybackStatus>(
     incident.playback.status,
   );
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const [accessGeneration, setAccessGeneration] = useState(0);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const pollCount = useRef(0);
+  const resume = useRef<{ offset: number; playing: boolean } | null>(null);
+  const recoveryAttempted = useRef(false);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const initialJumpDone = useRef(false);
   const prepare = useAction(preparePlaybackAction);
-  const selected =
-    incident.evidence.find((item) => item.id === selectedId) ?? preferred;
+  const selected = evidence.find((item) => item.id === selectedId) ?? preferred;
   const recordingDuration = Math.max(
     0,
     (Date.parse(incident.detection.recordingEndAt) -
@@ -57,6 +62,13 @@ export function IncidentPlayback({
     recordingDuration,
   );
 
+  const requestedOffset =
+    initialSeek === "event"
+      ? eventOffset
+      : initialSeek != null && /^\d+(?:\.\d+)?$/.test(initialSeek)
+        ? validEventOffset(Number(initialSeek), recordingDuration)
+        : null;
+
   const refreshAccess = useCallback(async () => {
     setAccessError(null);
     try {
@@ -67,16 +79,44 @@ export function IncidentPlayback({
       const payload = (await response.json()) as {
         status?: PlaybackStatus;
         url?: string;
+        expiresInSeconds?: number;
       };
+      if (!response.ok && response.status !== 410) {
+        throw new Error("Playback access request failed");
+      }
       const nextStatus = payload.status ?? "unavailable";
+      if (nextStatus === "available" && !payload.url) {
+        throw new Error("Playback URL missing");
+      }
+      const video = videoRef.current;
+      if (video)
+        resume.current = { offset: video.currentTime, playing: !video.paused };
+      setExpiresAt(
+        nextStatus === "available"
+          ? Date.now() + (payload.expiresInSeconds ?? 300) * 1000
+          : null,
+      );
+      if (nextStatus === "available") setAccessGeneration((value) => value + 1);
       setStatus(nextStatus);
       setPlaybackUrl(nextStatus === "available" ? (payload.url ?? null) : null);
       return nextStatus;
     } catch {
-      setAccessError("Playback access could not be refreshed.");
-      return "failed" as const;
+      setStatus("failed");
+      setPlaybackUrl(null);
+      setExpiresAt(null);
+      setAccessError(
+        "Playback access could not be refreshed. Check your connection and try again.",
+      );
+      return "access_error" as const;
     }
-  }, [incident.id]);
+  }, [
+    incident.id,
+    setAccessError,
+    setExpiresAt,
+    setStatus,
+    setPlaybackUrl,
+    setAccessGeneration,
+  ]);
 
   const jumpTo = useCallback(
     (offset: number) => {
@@ -112,16 +152,52 @@ export function IncidentPlayback({
   }, [status, pollTimedOut, refreshAccess]);
 
   useEffect(() => {
-    if (
-      initialSeek === "event" &&
-      playbackUrl &&
+    if (!playbackUrl || expiresAt == null) return;
+    const timer = window.setTimeout(
+      () => void refreshAccess(),
+      Math.max(1000, expiresAt - Date.now() - 30000),
+    );
+    return () => window.clearTimeout(timer);
+  }, [playbackUrl, expiresAt, refreshAccess]);
+
+  function restorePlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (resume.current) {
+      video.currentTime = clampSeekOffset(
+        resume.current.offset,
+        video.duration,
+      );
+      if (resume.current.playing)
+        void video.play().catch(() => setBuffering(false));
+      resume.current = null;
+    } else if (
+      initialSeek != null &&
       !initialJumpDone.current &&
-      eventOffset != null
+      requestedOffset != null
     ) {
       initialJumpDone.current = true;
-      jumpTo(eventOffset);
+      jumpTo(requestedOffset);
     }
-  }, [initialSeek, playbackUrl, eventOffset, jumpTo]);
+  }
+
+  function handleVideoError() {
+    setBuffering(false);
+    const code = videoRef.current?.error?.code;
+    if ((code === 2 || code === 4) && !recoveryAttempted.current) {
+      recoveryAttempted.current = true;
+      void refreshAccess();
+      return;
+    }
+    setPlaybackUrl(null);
+    setExpiresAt(null);
+    setStatus("failed");
+    setAccessError(
+      code === 3 || code === 4
+        ? "This browser could not decode the recording. Retry playback or report the recording for investigation."
+        : "The recording could not be loaded. Check your connection and retry playback.",
+    );
+  }
 
   function selectFrame(item: Evidence) {
     setSelectedId(item.id);
@@ -130,19 +206,23 @@ export function IncidentPlayback({
 
   function jumpToEvent() {
     if (eventOffset == null) return;
-    const event =
-      incident.evidence.find((item) => item.role === "event") ?? preferred;
+    const event = evidence.find((item) => item.role === "event") ?? preferred;
     if (event) setSelectedId(event.id);
     jumpTo(eventOffset);
   }
 
   async function requestPreparation() {
     setAccessError(null);
+    recoveryAttempted.current = false;
+    const current = await refreshAccess();
+    if (current === "available") return;
+    if (current === "access_error") return;
     const result = await prepare.executeAsync({ incidentId: incident.id });
     if (result?.data?.success) {
       setStatus(result.data.status === "available" ? "available" : "preparing");
       setPollTimedOut(false);
       pollCount.current = 0;
+      if (result.data.status === "available") await refreshAccess();
       return;
     }
     setAccessError(
@@ -156,6 +236,7 @@ export function IncidentPlayback({
         <div className="relative aspect-video">
           {playbackUrl ? (
             <video
+              key={accessGeneration}
               ref={videoRef}
               src={playbackUrl}
               poster={selected?.signedUrl ?? undefined}
@@ -166,10 +247,8 @@ export function IncidentPlayback({
               onCanPlay={() => setBuffering(false)}
               onPlaying={() => setBuffering(false)}
               onWaiting={() => setBuffering(true)}
-              onError={() => {
-                setPlaybackUrl(null);
-                setStatus("expired");
-              }}
+              onLoadedMetadata={restorePlayback}
+              onError={handleVideoError}
               className="size-full bg-black object-contain"
               aria-label="Original XProtect incident recording"
             />
@@ -222,8 +301,8 @@ export function IncidentPlayback({
           >
             <Clock3 className="size-3.5" />
             {eventOffset == null
-              ? "No reliable event position"
-              : "Jump to suspected event"}
+              ? "Event time unknown"
+              : `Jump to suspected event at approximately ${formatOffset(eventOffset)}`}
           </button>
         </div>
       </div>
@@ -238,7 +317,7 @@ export function IncidentPlayback({
       )}
 
       <EvidenceTimeline
-        evidence={incident.evidence}
+        evidence={evidence}
         selected={selected}
         duration={recordingDuration}
         onSelect={selectFrame}
@@ -296,7 +375,7 @@ function PlaybackOverlay({
             : status === "expired"
               ? "Playback access expired"
               : status === "failed"
-                ? "Playback preparation failed"
+                ? "Playback could not be loaded"
                 : timedOut
                   ? "Preparation is taking longer than expected"
                   : "Recording playback is not prepared"}
@@ -318,7 +397,9 @@ function PlaybackOverlay({
               ? "Requesting…"
               : status === "expired" || timedOut
                 ? "Refresh playback"
-                : "Prepare recording"}
+                : status === "failed"
+                  ? "Retry playback"
+                  : "Prepare recording"}
           </button>
         )}
       </div>

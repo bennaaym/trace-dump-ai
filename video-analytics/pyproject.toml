@@ -20,6 +20,9 @@ detection = [
   "torch>=2.2,<3",
   "ultralytics>=8.3,<9",
 ]
+plates = [
+  "onnxruntime>=1.20,<2",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.11,<1",

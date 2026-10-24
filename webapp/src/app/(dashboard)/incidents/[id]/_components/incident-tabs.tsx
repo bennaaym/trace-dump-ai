@@ -9,6 +9,8 @@ import { formatDateTime, reviewStatusLabel } from "../../../_lib/format";
 import type { IncidentDetail } from "../../../_lib/types";
 import { AiAnalysis } from "./ai-analysis";
 import { preferredEvidence } from "./evidence-viewer-state";
+import { IncidentPriority } from "./incident-priority";
+import { PlateEvidence } from "./plate-evidence";
 import { IncidentPlayback } from "./incident-playback";
 import { LocalDateTime } from "./local-date-time";
 import {
@@ -131,10 +133,16 @@ function OverviewTab({
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,.8fr)]">
       <div>
-        <IncidentPlayback incident={incident} initialSeek={initialSeek} />
+        <IncidentPlayback
+          key={initialSeek ?? "start"}
+          incident={incident}
+          initialSeek={initialSeek}
+        />
       </div>
 
       <div className="space-y-4">
+        <PlateEvidence incident={incident} />
+        <IncidentPriority incident={incident} />
         <section className="rounded-xl border bg-white p-4">
           <p className="text-[10px] font-bold tracking-wide text-teal-700 uppercase">
             Incident narrative

@@ -12,12 +12,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .config import Settings, load_prompt
+from .config import PROJECT_ROOT, Settings, load_prompt
 from .db.cameras import CameraSyncError, SupabaseCameraRepository, sync_cameras
 from .db.client import SupabaseClient, SupabaseError
 from .db.persistence import PendingSyncStore, SupabaseAnalysisRepository
 from .detection.activity import ActivityDetector, DetectorConfig, write_json_atomic
+from .detection.plates import PlateRecognizer
 from .hafnia.client import HafniaClient, HafniaError
+from .hafnia.prompting import recording_prompt
 from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
 from .workers.playback import PlaybackWorker
@@ -221,6 +223,11 @@ def command_analyze(settings: Settings, args: argparse.Namespace) -> int:
         raise ValueError(f"Camera is disabled: {camera.name} ({camera.id})")
     uri = build_xprotect_uri(camera.id, args.start, args.end)
     prompt = load_prompt(settings.prompt_path)
+    if settings.prompt_path.stem in ("dumping_v6", "dumping_v7"):
+        duration = (
+            validate_utc_timestamp(args.end) - validate_utc_timestamp(args.start)
+        ).total_seconds()
+        prompt = recording_prompt(prompt, duration)
     requested_at = _utc_now()
     request, created = hafnia.create_summary(prompt, uri, args.model or settings.hafnia_model)
     print(f"Summary ID: {created['Id']}")
@@ -324,6 +331,11 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
         raise ValueError(
             "Hafnia monitoring requires --detect so intervals are selected automatically"
         )
+    plate_recognizer = None
+    if args.recognize_plates:
+        if not hafnia_enabled:
+            raise ValueError("Plate recognition requires an analysis-enabled monitoring run")
+        plate_recognizer = PlateRecognizer(Path(args.plate_models_dir))
     xprotect = _xprotect_client(settings)
     camera = _resolve_camera(args.camera, xprotect.list_cameras())
     if camera.enabled is False:
@@ -395,6 +407,7 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
                 poll_interval=settings.poll_interval,
                 poll_timeout=settings.poll_timeout,
                 repository=repository,
+                plate_recognizer=plate_recognizer,
                 detector_metadata={
                     "detector": "MOG2+YOLO",
                     "detector_config": activity["detector_config"],
@@ -513,6 +526,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     monitor.add_argument(
         "--yolo-model", default="yolo11n.pt", help="Ultralytics YOLO model path or name"
+    )
+    monitor.add_argument(
+        "--recognize-plates",
+        action="store_true",
+        help="Inspect positive incidents with local CPU plate detector and OCR",
+    )
+    monitor.add_argument(
+        "--plate-models-dir",
+        default=str(PROJECT_ROOT / "models" / "plates"),
+        help="Directory of supported local ONNX plate models; never downloads weights",
     )
     monitor.add_argument(
         "--simulation-run",

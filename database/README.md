@@ -26,7 +26,7 @@ Foreign keys use `RESTRICT`, so ordinary deletes cannot cascade through investig
 
 ## Worker field mapping
 
-The migrated Python worker still writes local JSON. The next integration phase should perform database writes transactionally with the server-side Supabase service-role credential.
+The Python worker writes local artifacts and synchronizes application records and private evidence with the server-side Supabase service-role credential. The following mapping documents its persistence contract.
 
 | Worker output | Database destination |
 | --- | --- |
@@ -40,11 +40,11 @@ The migrated Python worker still writes local JSON. The next integration phase s
 | Positive parsed result | one `incidents` row, initially `pending_review` |
 | Evidence role, timestamp, offset, SHA-256 and method | `evidence` |
 
-The current worker treats Hafnia summary IDs as strings, while this schema follows the required UUID contract. Confirm the real gateway identifier format before persistence is implemented; do not coerce a non-UUID value silently.
+The schema requires UUID Hafnia summary IDs. The current gateway supplies UUIDs; do not silently coerce an incompatible identifier from another integration.
 
 ## Security and RLS
 
-RLS is enabled on all six tables. There are no anonymous policies and no authenticated write policies for machine-generated data.
+RLS is enabled on application tables. There are no anonymous policies and no authenticated write policies for machine-generated data.
 
 An authenticated user is an operator only when the trusted JWT `app_metadata.trace_dump_role` claim is `operator` or `admin`. This claim must be assigned through an administrative server path; never derive authorization from user-editable metadata.
 
@@ -132,7 +132,9 @@ Prerequisites are the Supabase CLI and its local container runtime. A plain Post
 
 ## Verification status
 
-The migrations have been checked against the migrated worker's JSON shapes and statically parsed as PostgreSQL SQL. This environment does not have PostgreSQL, Docker, or the Supabase CLI, so the migrations have **not** been applied to a live or local Supabase database. Before worker integration, run a clean local `supabase db reset` and verify:
+The existing development database supports the live worker, evidence, review, and playback flows. The two new migrations `20261023190000_requeue_expired_incident_recordings.sql` and `20261024000000_incident_priority_adjustments.sql` remain unapplied as of the 24 October 2026 handoff. Local PostgreSQL-compatible tests passed for their requeue and priority authorization/history behavior; live priority adjustment and expired-derivative requeue acceptance remain pending. See the [feature handoff](../docs/MOHSIN_FEATURE_HANDOFF.md).
+
+For a new deployment, validate the full ordered migration history on a clean Supabase database, including:
 
 - interval and coordinate constraint failures;
 - multiple analyses for one detection and terminal-analysis immutability;
@@ -142,3 +144,10 @@ The migrations have been checked against the migrated worker's JSON shapes and s
 - operator versus non-operator reads, restricted analysis columns, and absent browser writes;
 - private bucket access and signed URL behavior;
 - append-only review history and atomic incident status updates.
+
+
+## Incident priority adjustments
+
+Migration `20261024000000_incident_priority_adjustments.sql` adds operator-readable, append-only priority history and `set_incident_priority(incident_id, level, reason, expected_id)`. Level is high/medium/low, or null to return to automatic assessment. The RPC requires trusted operator authorization, a nonblank reason (maximum 1000 characters), and the latest adjustment ID (null for the first adjustment). It locks the incident before checking the expected ID, rejecting concurrent stale writes with SQLSTATE 40001. Direct authenticated writes are prohibited. Priority does not update the incident's review status or the immutable model output. Apply this versioned migration to the target development Supabase before testing reviewer adjustments.
+
+Automatic priority is derived by application rules `observable-risk-v1` from the saved structured response, rather than a model-selected priority. Existing responses without risks display Unknown. The migration does not backfill risk data or change existing incidents.

@@ -75,3 +75,45 @@ python -m pytest
 python -m ruff check .
 python -m ruff format --check .
 ```
+
+## Event timing
+
+New analyses default to the versioned `dumping_v7.txt` prompt, which returns the `investigation_v1` JSON contract. It requests one approximate clip-relative deposit/release time, or Unknown when the action cannot be timed. A locally configured `DUMPING_PROMPT_PATH` still overrides this default.
+
+The worker rejects ambiguous ranges, negative offsets, wall-clock timestamps, and times outside the selected recording interval. Zero seconds is a valid event time. Unknown/invalid times produce a midpoint frame labeled `representative`, never `event`. Context frames sharing an event frame are omitted without removing the event frame. Existing analyses and evidence are not rewritten automatically.
+
+
+## Evidence-linked investigation timeline
+
+The default prompt requests up to twelve timestamped observations, explicit uncertainty, contradictions, and alternative hypotheses. The worker validates observation identifiers and clip-relative offsets and extracts original source frames for valid times. Invalid or unknown times remain unknown and do not receive invented frame links.
+
+Structured observations remain in the immutable original analysis response (`analyses.raw_response.Response`). Evidence metadata records the worker-owned `observation_id`, while existing evidence rows retain Storage paths, actual frame offsets, and hashes. No new database columns or migration are required for this timeline. Missing or failed frame extraction remains visible as unavailable in the UI. Existing labeled-text responses remain supported and are not retroactively converted into observations.
+
+The AI Analysis tab shows the timeline, actual source-frame links, and links to seek the recording. Model-supplied contradictions and a limited text check for a positive assessment describing no visible deposit are review flags, not new classifications or proof. A source frame enables inspection; it does not verify an AI claim. Explicit `DUMPING_PROMPT_PATH` overrides continue to take precedence.
+
+
+The historical v5 prompt preserved the detection-instruction paragraphs from v2. The current v7 prompt strengthens the visible-evidence and consistency requirements at the user's request. The v3 prompt is retained for provenance, not used by default. A prompt-prefix regression test protects this boundary. Identical detection instructions do not guarantee identical VLM output, correct timing, or consistency between classification and narrative.
+
+## Optional plate recognition
+
+Pass `--recognize-plates` to an analysis-enabled monitor run to scan positive incidents with the supported local CPU ONNX detector and OCR. See [PLATE_RECOGNITION.md](PLATE_RECOGNITION.md) for model requirements, evidence provenance, limitations, and the manual test command. This option does not alter the detection prompt. It does not download models and does not reprocess existing incidents.
+
+
+## Observable risk and incident priority
+
+The current `dumping_v7` prompt includes an independent `risk_factors` output object with all seven named keys. Historical v5 preserved v4 and introduced this contract. Existing `DUMPING_PROMPT_PATH` overrides still apply. Risk fields are retained in the immutable original analysis response; they never change the parsed dumping classification or confirm an incident. No new runtime variables or models are needed.
+
+The incident UI applies versioned deterministic rules (`observable-risk-v1`): roadway/path obstruction or visible smoke/leakage is High; large/scattered discarded material or proximity to an entrance/crossing is Medium; Low requires all seven factors explicitly absent. Otherwise the assessment is Unknown. Each yes/no requires a nonempty visible-evidence explanation, and valid clip-relative timestamps link to playback. These are AI-reported observations for human review, not verified hazard measurements. Legacy responses remain Unknown; they are not backfilled from narrative keywords.
+
+Apply `database/migrations/20261024000000_incident_priority_adjustments.sql` to enable reviewer priority adjustments. Operators can set High/Medium/Low or return to automatic, always with a reason. The database records append-only history, validates operator authorization and rejects stale edits. This does not alter incident review status. The UI remains readable before this migration and explicitly disables adjustments.
+
+For a fresh manual test, run the Ipoh analysis with a new simulation ID (for example `--simulation-run ipoh-risk-manual-001`) and the default prompt. Inspect the new incident's Number plate evidence and Incident priority cards. Expand Observable risk factors to inspect claims and supporting moments; check any reviewer adjustment survives refresh. Existing incidents do not acquire new risk findings automatically.
+
+
+## Evidence-grounded prompt and timing validation (v7)
+
+The user-authorized v7 prompt distinguishes visible deposit/release from an existing pile, loading/collection, and ambiguous movement. Requests include the actual selected recording duration. The model must link the main event marker to a timed release observation using `event_observation_id`; absent, invalid or inconsistent references produce an unknown event time and an explicit explanation. The original raw answer and classification remain preserved. Explicitly unknown observation times stay untimed. Both Python and UI now preserve narrative/uncertainty arrays if a response deviates from the requested string fields.
+
+This improves validation, not the truth of model observations. Controlled same-recording comparisons still returned unsupported 0.3-second release claims and omitted event references. v7 produced named risk fields, but repeated risk assessments differed. Do not treat stronger wording, consistent positive labels, or a source-frame link as proof of accuracy. Current model timing requires human verification; do not silently manufacture a replacement timestamp. See `.runtime/verification/remaining-evaluation/evaluation.json` for the local run evidence.
+
+Fresh acceptance run `ipoh-remaining-v7-20261024-001` created incident `1610ff1b-eac8-55f0-9ce1-f58a02e9919f`, with six evidence rows, AHN9916 OCR candidate, and saved risk fields. The unsupported event marker was withheld. No new environment variables are required.

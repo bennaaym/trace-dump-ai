@@ -202,3 +202,58 @@ def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppresse
         if operation["kind"] == "update" and operation["key"].endswith(":completed")
     ]
     assert completed[0]["values"]["dumping_detected"] == "no"
+
+
+def test_risk_fields_survive_persistence_without_changing_detection(tmp_path, monkeypatch):
+    """Synthetic risk-bearing response, no external requests or live DB writes."""
+    import json
+
+    response = {
+        "schema_version": "investigation_v1",
+        "dumping_detected": "yes",
+        "dumping_type": "static",
+        "event_offset_seconds": 0.3,
+        "description": "Synthetic contract fixture, not a real model finding.",
+        "risk_factors": {
+            "roadway_blocked": {
+                "status": "yes",
+                "evidence": "Synthetic test obstruction.",
+                "offset_seconds": 2.0,
+            }
+        },
+    }
+
+    class RiskHafnia(NegativeHafnia):
+        def wait_for_summary(self, summary_id, **kwargs):
+            return {"Id": summary_id, "Progress": "Completed", "Response": json.dumps(response)}
+
+    monkeypatch.setattr(
+        "video_analytics.workers.incident_pipeline.run_mip_export",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Synthetic unavailable export")),
+    )
+    repository = RecordingRepository()
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "Synthetic camera"),
+        hafnia=RiskHafnia(),
+        prompt="Synthetic prompt",
+        prompt_version="dumping_v5",
+        model_id="synthetic-model",
+        runs_root=tmp_path,
+        simulation_run_id="synthetic-risk",
+        state_store=SimulationStateStore(tmp_path / "state.json"),
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+    )
+    result = pipeline.process([SESSION], 1)
+    assert result["results"][0]["classification"]["classification"] == "yes"
+    completed = next(
+        op
+        for op in repository.operations
+        if op["kind"] == "update" and op["key"].endswith(":completed")
+    )
+    assert json.loads(completed["values"]["raw_response"]["Response"]) == response
+    assert completed["values"]["dumping_detected"] == "yes"
+    incident = next(op for op in repository.operations if op.get("table") == "incidents")
+    assert incident["values"]["review_status"] == "pending_review"

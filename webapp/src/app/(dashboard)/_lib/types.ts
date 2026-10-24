@@ -72,6 +72,15 @@ export interface IncidentListItem {
 }
 
 export interface IncidentDetail extends IncidentListItem {
+  priorityAdjustmentsAvailable?: boolean;
+  priorityHistory?: Array<{
+    id: string;
+    level: "high" | "medium" | "low" | null;
+    reason: string;
+    reviewerId: string;
+    createdAt: string;
+  }>;
+
   viewer: {
     id: string;
     email: string | null;
@@ -107,6 +116,7 @@ export interface IncidentDetail extends IncidentListItem {
       uncertainties: string | null;
     };
     investigationResponseAvailable: boolean;
+    investigationResponseText: string | null;
     rawResponse: string | null;
   };
   playback: {

@@ -5,6 +5,7 @@ import type {
   IncidentDetail,
   ReviewStatus,
 } from "../../../_lib/types";
+import { recordingAccessStatus } from "../_lib/playback-state";
 import { normalizeHafniaResponse } from "../_lib/hafnia-response";
 import { sanitizeDetectorMetadata } from "../_lib/technical-metadata";
 
@@ -105,13 +106,26 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
   ) {
     throw new Error("Unable to load incident playback state.");
   }
+  const { data: priorityRows, error: priorityError } = await supabase
+    .from("incident_priority_adjustments")
+    .select("id,level,reason,reviewer_id,created_at")
+    .eq("incident_id", id)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (priorityError && !["PGRST205", "42P01"].includes(priorityError.code))
+    throw new Error("Unable to load priority adjustments.");
   const playback = Array.isArray(playbackRows) ? playbackRows[0] : null;
-  const playbackExpired =
-    playback?.retention_expires_at &&
-    Date.parse(playback.retention_expires_at) <= Date.now();
   return {
     id: incident.id,
     detectionId: incident.detection_id,
+    priorityAdjustmentsAvailable: !priorityError,
+    priorityHistory: (priorityRows ?? []).map((row) => ({
+      id: row.id,
+      level: row.level as "high" | "medium" | "low" | null,
+      reason: row.reason,
+      reviewerId: row.reviewer_id,
+      createdAt: row.created_at,
+    })),
     classification: incident.classification as IncidentClassification,
     reviewStatus: incident.review_status as ReviewStatus,
     description: incident.description,
@@ -160,15 +174,16 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
         responseError ? null : responseText,
       ),
       investigationResponseAvailable: !responseError && Boolean(responseText),
+      investigationResponseText: responseError ? null : responseText,
       rawResponse:
         viewerRole === "admin" && !responseError ? responseText : null,
     },
     playback: {
-      status: playbackExpired
-        ? "expired"
-        : playback?.status === "pending"
-          ? "preparing"
-          : (playback?.status ?? "unavailable"),
+      status: recordingAccessStatus(
+        playback?.status,
+        playback?.retention_expires_at,
+        Date.now(),
+      ),
       durationSeconds: playback?.duration_seconds ?? null,
       requestedAt: playback?.requested_at ?? null,
       completedAt: playback?.completed_at ?? null,

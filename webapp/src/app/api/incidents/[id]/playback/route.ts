@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordingAccessStatus } from "@/app/(dashboard)/incidents/[id]/_lib/playback-state";
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,10 +33,12 @@ export async function GET(
       { headers: { "Cache-Control": "no-store" } },
     );
   }
-  if (
-    recording.retention_expires_at &&
-    Date.parse(recording.retention_expires_at) <= Date.now()
-  ) {
+  const accessStatus = recordingAccessStatus(
+    recording.status,
+    recording.retention_expires_at,
+    Date.now(),
+  );
+  if (accessStatus === "expired") {
     return NextResponse.json(
       { status: "expired", durationSeconds: recording.duration_seconds },
       { status: 410, headers: { "Cache-Control": "no-store" } },
@@ -44,7 +47,7 @@ export async function GET(
   if (recording.status !== "available" || !recording.storage_path) {
     return NextResponse.json(
       {
-        status: recording.status === "pending" ? "preparing" : recording.status,
+        status: accessStatus,
         durationSeconds: recording.duration_seconds,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -55,7 +58,7 @@ export async function GET(
     .createSignedUrl(recording.storage_path, 300);
   if (signedError || !signed?.signedUrl) {
     return NextResponse.json(
-      { status: "expired", durationSeconds: recording.duration_seconds },
+      { status: "failed", durationSeconds: recording.duration_seconds },
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }

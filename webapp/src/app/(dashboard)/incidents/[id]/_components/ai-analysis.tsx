@@ -9,6 +9,8 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { PlateEvidence } from "./plate-evidence";
+import { InvestigationTimeline } from "./investigation-timeline";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "../../../_lib/format";
 import type { IncidentDetail } from "../../../_lib/types";
@@ -63,6 +65,8 @@ export function AiAnalysis({
 
   return (
     <div className="space-y-4">
+      <PlateEvidence incident={incident} />
+      <InvestigationTimeline incident={incident} />
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-950">
         <Bot className="mr-2 inline size-4 text-sky-700" />
         This is Hafnia&apos;s original assessment of suspected activity. It is
