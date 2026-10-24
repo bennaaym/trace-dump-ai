@@ -13,6 +13,7 @@ internal static class Program
 {
     private const string DefaultSdkDirectory = @"C:\Program Files\Milestone\XProtect Mobile Server";
     private static readonly Guid IntegrationId = new Guid("65e580da-9148-45cf-8265-27b01008669f");
+    private static readonly object StdoutLock = new object();
 
     private static int Main(string[] args)
     {
@@ -104,8 +105,12 @@ internal static class Program
         try
         {
             string timestamp = args.LiveContent.BeginTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
-            Console.WriteLine("FRAME|" + timestamp + "|" + Convert.ToBase64String(args.LiveContent.Content));
-            Console.Out.Flush();
+            // Live callbacks can overlap. Keep each large base64 record atomic on stdout.
+            lock (StdoutLock)
+            {
+                Console.WriteLine("FRAME|" + timestamp + "|" + Convert.ToBase64String(args.LiveContent.Content));
+                Console.Out.Flush();
+            }
         }
         finally { args.LiveContent.Dispose(); }
     }

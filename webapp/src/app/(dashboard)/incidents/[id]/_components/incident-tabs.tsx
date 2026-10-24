@@ -8,7 +8,6 @@ import { EmptyState } from "../../../_components/page-elements";
 import { formatDateTime, reviewStatusLabel } from "../../../_lib/format";
 import type { IncidentDetail } from "../../../_lib/types";
 import { AiAnalysis } from "./ai-analysis";
-import { preferredEvidence } from "./evidence-viewer-state";
 import { IncidentPlayback } from "./incident-playback";
 import { LocalDateTime } from "./local-date-time";
 import {
@@ -29,7 +28,6 @@ export function IncidentTabs({ incident }: { incident: IncidentDetail }) {
   const searchParams = useSearchParams();
   const active = normalizeIncidentTab(searchParams.get("tab"));
   const requestedSeek = searchParams.get("seek");
-  const featured = preferredEvidence(incident.evidence);
 
   function navigate(tab: IncidentTabId, frame?: string | null) {
     router.replace(
@@ -105,9 +103,7 @@ export function IncidentTabs({ incident }: { incident: IncidentDetail }) {
         {active === "analysis" && (
           <AiAnalysis
             incident={incident}
-            onViewEvidence={() =>
-              navigate("overview", featured?.role === "event" ? "event" : null)
-            }
+            onViewEvidence={() => navigate("overview", "event")}
           />
         )}
         {active === "history" && <ReviewHistory incident={incident} />}

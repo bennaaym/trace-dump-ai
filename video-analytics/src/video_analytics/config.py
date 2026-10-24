@@ -49,6 +49,18 @@ class Settings:
     playback_cache_dir: Path = DEFAULT_PLAYBACK_CACHE_DIR
     playback_retention_hours: int = 24
     playback_transcode_threads: int = 1
+    simulation_poll_seconds: float = 3.0
+    simulation_monitor_window_seconds: float = 20.0
+    simulation_monitor_fps: float = 5.0
+    simulation_yolo_model: str = ""
+    simulation_acquisition_retries: int = 3
+    simulation_recording_settle_seconds: float = 30.0
+    scene_check_recording_settle_seconds: float = 30.0
+    scene_check_clip_seconds: float = 60.0
+    scene_source_adapter: str = "unavailable"
+    scene_source_control_url: str | None = None
+    scene_source_control_token: str | None = None
+    scene_source_ready_timeout: float = 30.0
 
     @classmethod
     def from_env(cls, env_file: Path | str | None = None) -> Settings:
@@ -78,6 +90,24 @@ class Settings:
             ),
             playback_retention_hours=int(os.getenv("TRACEDUMP_PLAYBACK_RETENTION_HOURS", "24")),
             playback_transcode_threads=int(os.getenv("TRACEDUMP_PLAYBACK_TRANSCODE_THREADS", "1")),
+            simulation_poll_seconds=float(os.getenv("SIMULATION_POLL_SECONDS", "3")),
+            simulation_monitor_window_seconds=float(
+                os.getenv("SIMULATION_MONITOR_WINDOW_SECONDS", "20")
+            ),
+            simulation_monitor_fps=float(os.getenv("SIMULATION_MONITOR_FPS", "5")),
+            simulation_yolo_model=os.getenv("SIMULATION_YOLO_MODEL", ""),
+            simulation_acquisition_retries=int(os.getenv("SIMULATION_ACQUISITION_RETRIES", "3")),
+            simulation_recording_settle_seconds=float(
+                os.getenv("SIMULATION_RECORDING_SETTLE_SECONDS", "30")
+            ),
+            scene_check_recording_settle_seconds=float(
+                os.getenv("SCENE_CHECK_RECORDING_SETTLE_SECONDS", "30")
+            ),
+            scene_check_clip_seconds=float(os.getenv("SCENE_CHECK_CLIP_SECONDS", "60")),
+            scene_source_adapter=os.getenv("SCENE_SOURCE_ADAPTER", "unavailable"),
+            scene_source_control_url=os.getenv("SCENE_SOURCE_CONTROL_URL"),
+            scene_source_control_token=os.getenv("SCENE_SOURCE_CONTROL_TOKEN"),
+            scene_source_ready_timeout=float(os.getenv("SCENE_SOURCE_READY_TIMEOUT_SECONDS", "30")),
         )
 
 

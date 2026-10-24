@@ -60,5 +60,28 @@ class SupabaseClient:
             if raw:
                 return response.content
             return response.json() if response.content else None
+        except requests.HTTPError as exc:
+            detail = _safe_error_detail(exc.response)
+            suffix = f"; {detail}" if detail else ""
+            raise SupabaseError(f"Supabase {method} {path} failed: {exc}{suffix}") from exc
         except (requests.RequestException, ValueError) as exc:
             raise SupabaseError(f"Supabase {method} {path} failed: {exc}") from exc
+
+
+def _safe_error_detail(response: requests.Response | None) -> str | None:
+    """Return bounded PostgREST diagnostics without echoing headers or request data."""
+    if response is None:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        text = response.text.strip()
+        return text[:1000] if text else None
+    if not isinstance(payload, dict):
+        return None
+    parts = [
+        f"{key}={str(payload[key])[:500]}"
+        for key in ("code", "message", "details", "hint")
+        if payload.get(key)
+    ]
+    return "; ".join(parts) or None

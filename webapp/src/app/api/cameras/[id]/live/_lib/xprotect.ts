@@ -24,6 +24,11 @@ export interface XProtectSession {
   iceServers: BrowserIceServer[];
 }
 
+export interface XProtectLiveJpeg {
+  bytes: Uint8Array;
+  frameDateTime: string;
+}
+
 let tokenState: TokenState | null = null;
 
 function configuration() {
@@ -81,10 +86,12 @@ async function request(
   path: string,
   init: Omit<RequestInit, "headers"> & { body?: string },
   retryAuthentication = true,
+  namespace = "webRTC",
 ) {
   const { baseUrl } = configuration();
   const token = await accessToken();
-  const response = await fetch(`${baseUrl}/API/rest/v1/webRTC${path}`, {
+  const apiPrefix = namespace ? `/${namespace}` : "";
+  const response = await fetch(`${baseUrl}/API/rest/v1${apiPrefix}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -96,7 +103,7 @@ async function request(
   if (response.status === 401 && retryAuthentication) {
     tokenState = null;
     await accessToken(true);
-    return request(path, init, false);
+    return request(path, init, false, namespace);
   }
   if (!response.ok) {
     throw new Error(`XProtect WebRTC signaling failed (${response.status}).`);
@@ -179,4 +186,45 @@ export async function getXProtectCandidates(sessionId: string) {
         (candidate): candidate is string => typeof candidate === "string",
       )
     : [];
+}
+
+export async function getXProtectLiveJpeg(
+  cameraId: string,
+  width = 960,
+  height = 540,
+): Promise<XProtectLiveJpeg> {
+  const payload = (await request(
+    `/cameras/${encodeURIComponent(cameraId)}?task=JpegGetLive`,
+    {
+      method: "POST",
+      body: JSON.stringify({ width, height }),
+    },
+    true,
+    "",
+  )) as {
+    result?: {
+      state?: unknown;
+      frameDateTime?: unknown;
+      jpegDataAsBase64?: unknown;
+    };
+  } | null;
+  const result = payload?.result;
+  if (
+    result?.state !== "Success" ||
+    typeof result.frameDateTime !== "string" ||
+    typeof result.jpegDataAsBase64 !== "string"
+  ) {
+    throw new Error("XProtect did not return a valid live JPEG.");
+  }
+  const bytes = Buffer.from(result.jpegDataAsBase64, "base64");
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0xff ||
+    bytes[1] !== 0xd8 ||
+    bytes.at(-2) !== 0xff ||
+    bytes.at(-1) !== 0xd9
+  ) {
+    throw new Error("XProtect returned an incomplete live JPEG.");
+  }
+  return { bytes, frameDateTime: result.frameDateTime };
 }

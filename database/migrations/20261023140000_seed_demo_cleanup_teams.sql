@@ -17,6 +17,11 @@ values
         'd3b8245a-55f1-4d87-8d19-1a66f11a0003'::uuid,
         'Cleanup Team C — Bordeaux East',
         true
+    ),
+    (
+        'd3b8245a-55f1-4d87-8d19-1a66f11a0004'::uuid,
+        'Cleanup Team D — Bordeaux West',
+        true
     )
 on conflict (name) do update
 set active = excluded.active;
@@ -32,10 +37,11 @@ begin
        and name in (
            'Cleanup Team A — Bordeaux North',
            'Cleanup Team B — Bordeaux South',
-           'Cleanup Team C — Bordeaux East'
+           'Cleanup Team C — Bordeaux East',
+           'Cleanup Team D — Bordeaux West'
        );
 
-    if active_demo_team_count <> 3 then
+    if active_demo_team_count <> 4 then
         raise exception 'Expected all three hackathon cleanup teams to be active';
     end if;
 end;

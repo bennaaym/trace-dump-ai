@@ -70,6 +70,7 @@ export async function getIncidents(
     const { data: matchingCameras, error: cameraSearchError } = await supabase
       .from("cameras")
       .select("id")
+      .eq("is_scene_check_fixture", false)
       .ilike("name", `%${search}%`);
     if (cameraSearchError) {
       throw new Error(`Unable to search cameras: ${cameraSearchError.message}`);
@@ -97,7 +98,11 @@ export async function getIncidents(
 
   const [{ data, count, error }, camerasResult] = await Promise.all([
     query,
-    supabase.from("cameras").select("id,name").order("name"),
+    supabase
+      .from("cameras")
+      .select("id,name")
+      .eq("is_scene_check_fixture", false)
+      .order("name"),
   ]);
   if (error) throw new Error(`Unable to load incidents: ${error.message}`);
   if (camerasResult.error) {

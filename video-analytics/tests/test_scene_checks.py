@@ -7,7 +7,9 @@ import cv2
 import numpy as np
 import pytest
 
-from video_analytics.hafnia.scene_comparison import analyze_scene_clip
+from video_analytics.evidence.reference import validate_discarded_object_reference
+from video_analytics.hafnia.client import HafniaError
+from video_analytics.hafnia.scene_comparison import analyze_scene_clip, build_scene_check_prompt
 from video_analytics.models import XProtectJpeg
 from video_analytics.workers.scene_checks import SceneCheckWorker
 from video_analytics.xprotect.live_frames import FrameAcquisitionError
@@ -27,6 +29,13 @@ def _jpeg(camera_id: str, timestamp: datetime, body: bytes) -> XProtectJpeg:
 
 def _stream(frames):
     yield from frames
+
+
+def test_after_evidence_role_is_a_valid_legacy_post_dumping_reference():
+    image = _jpeg("camera", datetime.now(UTC), b"reference").jpeg_bytes
+
+    assert validate_discarded_object_reference(image, {}, role="after") is True
+    assert validate_discarded_object_reference(image, {}, role="event") is False
 
 
 def test_snapshot_rejects_repeated_cached_frames(monkeypatch):
@@ -53,6 +62,19 @@ def test_snapshot_requires_advancing_changed_frame(monkeypatch):
     assert abs((snapshot.source_timestamp - now).total_seconds()) < 0.001
 
 
+def test_scene_check_prompt_focuses_on_reported_waste_and_latest_stable_view():
+    prompt = build_scene_check_prompt(
+        incident_description="Metal strips beside the left wall",
+        reference_role="after",
+    )
+
+    assert "exactly one current XProtect clip" in prompt
+    assert "latest stable view" in prompt
+    assert "Do not assume a looping clip has before/after progression" in prompt
+    assert "wet or dry pavement" in prompt
+    assert "Metal strips beside the left wall" in prompt
+
+
 class FakeHafnia:
     def create_summary(self, prompt, video_uri, model_id):
         assert "Return JSON only" in prompt
@@ -66,9 +88,16 @@ class FakeHafnia:
             "Response": json.dumps(
                 {
                     "assessment": "appears_cleared",
-                    "observations": ["The curb area is visible."],
+                    "cleanup_area_observable": False,
+                    "confidence": 0.96,
+                    "cleanup_score": 94,
+                    "current_waste_visible": False,
+                    "summary": "The reported bag is absent from the inspected curb.",
+                    "reported_waste": "A discarded bag",
+                    "reported_location": "Beside the curb",
+                    "current_observation": "The curb is visible without the reported bag.",
+                    "key_changes": ["The reported bag is not visible at the described curb."],
                     "limitations": [],
-                    "object_region_observable": False,
                 }
             ),
         }
@@ -86,7 +115,158 @@ def test_unobservable_clear_response_is_downgraded_to_uncertain():
         poll_timeout=1,
     )
     assert result.assessment == "uncertain"
+    assert result.confidence == 0.96
+    assert result.cleanup_score == 94
+    assert result.raw_response["assessment"] == "appears_cleared"
+
+
+class FakeHafniaWithoutConfidence(FakeHafnia):
+    def wait_for_summary(self, summary_id, **kwargs):
+        result = super().wait_for_summary(summary_id, **kwargs)
+        response = json.loads(result["Response"])
+        del response["confidence"]
+        result["Response"] = json.dumps(response)
+        return result
+
+
+def test_scene_check_allows_missing_optional_confidence():
+    result = analyze_scene_clip(
+        FakeHafniaWithoutConfidence(),
+        video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+        incident_description="A bag beside the curb",
+        reference_role="after",
+        object_region=None,
+        model_id="model",
+        poll_interval=0,
+        poll_timeout=1,
+    )
     assert result.confidence is None
+    assert result.assessment == "uncertain"
+
+
+class FakeHafniaWithoutOptionalMetrics(FakeHafnia):
+    def wait_for_summary(self, summary_id, **kwargs):
+        result = super().wait_for_summary(summary_id, **kwargs)
+        response = json.loads(result["Response"])
+        response["cleanup_area_observable"] = True
+        response["key_changes"] = []
+        response.pop("confidence")
+        response.pop("cleanup_score")
+        result["Response"] = json.dumps(response)
+        return result
+
+
+def test_scene_check_accepts_empty_changes_without_inventing_optional_metrics():
+    result = analyze_scene_clip(
+        FakeHafniaWithoutOptionalMetrics(),
+        video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+        incident_description="A bag beside the curb",
+        reference_role="after",
+        object_region=None,
+        model_id="model",
+        poll_interval=0,
+        poll_timeout=1,
+    )
+
+    assert result.assessment == "appears_cleared"
+    assert result.key_changes == []
+    assert result.confidence is None
+    assert result.cleanup_score is None
+
+
+class FakeHafniaContradictoryClearScene(FakeHafnia):
+    def wait_for_summary(self, summary_id, **kwargs):
+        result = super().wait_for_summary(summary_id, **kwargs)
+        response = json.loads(result["Response"])
+        response.update(
+            {
+                "assessment": "still_visible",
+                "cleanup_score": 0,
+                "confidence": 0.99,
+                "current_waste_visible": False,
+                "cleanup_area_observable": True,
+            }
+        )
+        result["Response"] = json.dumps(response)
+        return result
+
+
+def test_contradictory_visibility_is_preserved_raw_and_marked_uncertain():
+    result = analyze_scene_clip(
+        FakeHafniaContradictoryClearScene(),
+        video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+        incident_description="A large flat object on the pavement behind an orange van",
+        reference_role="after",
+        object_region=None,
+        model_id="model",
+        poll_interval=0,
+        poll_timeout=1,
+    )
+
+    assert result.assessment == "uncertain"
+    assert result.cleanup_score == 0
+    assert result.raw_response["assessment"] == "still_visible"
+    assert any("conflicted" in limitation for limitation in result.limitations)
+
+
+class FakeHafniaLongSummary(FakeHafnia):
+    def wait_for_summary(self, summary_id, **kwargs):
+        result = super().wait_for_summary(summary_id, **kwargs)
+        response = json.loads(result["Response"])
+        response["summary"] = "word " * 26
+        result["Response"] = json.dumps(response)
+        return result
+
+
+def test_scene_check_rejects_excessively_long_summary():
+    with pytest.raises(HafniaError, match="summary is too long"):
+        analyze_scene_clip(
+            FakeHafniaLongSummary(),
+            video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+            incident_description="A bag beside the curb",
+            reference_role="after",
+            object_region=None,
+            model_id="model",
+            poll_interval=0,
+            poll_timeout=1,
+        )
+
+
+def test_scene_check_rejects_missing_incident_description():
+    with pytest.raises(HafniaError, match="incident description"):
+        analyze_scene_clip(
+            FakeHafnia(),
+            video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+            incident_description=" ",
+            reference_role="after",
+            object_region=None,
+            model_id="model",
+            poll_interval=0,
+            poll_timeout=1,
+        )
+
+
+class FakeHafniaInvalidAssessment(FakeHafnia):
+    def wait_for_summary(self, summary_id, **kwargs):
+        result = super().wait_for_summary(summary_id, **kwargs)
+        response = json.loads(result["Response"])
+        response["assessment"] = "clean"
+        result["Response"] = json.dumps(response)
+        return result
+
+
+def test_scene_check_rejects_invalid_assessment():
+    with pytest.raises(HafniaError, match="invalid assessment"):
+        analyze_scene_clip(
+            FakeHafniaInvalidAssessment(),
+            video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+            incident_description="A bag beside the curb",
+            reference_role="after",
+            object_region=None,
+            model_id="model",
+            poll_interval=0,
+            poll_timeout=1,
+        )
 
 
 class FakeClient:
@@ -108,6 +288,8 @@ class FakeClient:
                     "lease_owner": "worker",
                 }
             ]
+        if path == "/rest/v1/camera_scene_state":
+            return None
         if path.startswith("/storage/v1/object/incident-evidence/"):
             return b"synthetic invalid image fixture"
         return None
@@ -175,3 +357,90 @@ def test_transient_camera_failure_requests_bounded_retry(monkeypatch):
     assert result["status"] == "retry"
     assert result["assessment"] == "uncertain"
     assert result["error_code"] == "capture_failed"
+
+
+def test_scene_check_keeps_using_selected_mapped_fixture_camera(monkeypatch):
+    logical_camera_id = "30000000-0000-4000-8000-000000000001"
+    fixture_camera_id = "50000000-0000-4000-8000-000000000001"
+    client = FakeClient(
+        _claim(
+            camera_id=logical_camera_id,
+            reference_evidence_id="40000000-0000-4000-8000-000000000001",
+            reference_storage_path="incidents/i/after.jpg",
+            reference_role="after",
+            reference_metadata={"discarded_object_visible": True},
+            incident_description="An orange bag in the road",
+        )
+    )
+    original_request = client.request
+
+    def request(method, path, **kwargs):
+        if path == "/rest/v1/camera_scene_state":
+            return [
+                {
+                    "status": "ready",
+                    "verified_at": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
+                    "capture_camera_id": fixture_camera_id,
+                }
+            ]
+        if path.startswith("/storage/v1/object/incident-evidence/"):
+            success, encoded = cv2.imencode(".jpg", np.full((4, 4, 3), 100, dtype=np.uint8))
+            assert success
+            return encoded.tobytes()
+        return original_request(method, path, **kwargs)
+
+    client.request = request
+    captured_camera_ids = []
+
+    def capture(_server, camera_id):
+        captured_camera_ids.append(camera_id)
+        now = datetime.now(UTC)
+        return type(
+            "Snapshot",
+            (),
+            {
+                "jpeg_bytes": b"jpeg",
+                "source_timestamp": now - timedelta(seconds=3),
+                "captured_at": now,
+                "source_age_ms": 0.0,
+            },
+        )()
+
+    monkeypatch.setattr("video_analytics.workers.scene_checks.capture_fresh_snapshot", capture)
+    worker = SceneCheckWorker(
+        client,
+        FakeHafnia(),
+        xprotect_server="http://localhost",
+        model_id="model",
+        recording_settle_seconds=0,
+        worker_id="worker",
+    )
+
+    assert worker.process_once() is True
+    assert captured_camera_ids == [fixture_camera_id]
+    hafnia_calls = [call for call in client.calls if call[1].endswith("finish_cleanup_scene_check")]
+    result = hafnia_calls[0][2]["json"]["p_result"]
+    assert result["follow_up_source"] == "Configured simulated XProtect fixture camera"
+    assert result["gateway_input_limitations"]
+
+
+def test_scene_check_does_not_fall_back_when_selected_scene_is_not_ready():
+    client = FakeClient(_claim())
+    original_request = client.request
+
+    def request(method, path, **kwargs):
+        if path == "/rest/v1/camera_scene_state":
+            return [{"status": "error", "capture_camera_id": None}]
+        return original_request(method, path, **kwargs)
+
+    client.request = request
+    worker = SceneCheckWorker(
+        client,
+        FakeHafnia(),
+        xprotect_server="http://localhost",
+        model_id="model",
+        worker_id="worker",
+    )
+
+    with pytest.raises(RuntimeError, match="selected scene source is not ready"):
+        worker._capture_camera_id("30000000-0000-4000-8000-000000000001")

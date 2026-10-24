@@ -24,7 +24,12 @@ async function AuthenticatedDashboard({ children }: { children: ReactNode }) {
   if (!user) redirect("/login");
 
   return (
-    <DashboardShell userEmail={user.email ?? "Signed-in user"}>
+    <DashboardShell
+      userEmail={user.email ?? "Signed-in user"}
+      canUseSimulation={["operator", "admin"].includes(
+        user.app_metadata.trace_dump_role,
+      )}
+    >
       {children}
     </DashboardShell>
   );

@@ -1,3 +1,5 @@
+import pytest
+
 from video_analytics.xprotect.alarms import (
     ALARM_DESCRIPTION,
     ALARM_EVENT_TYPE_NAME,
@@ -6,11 +8,19 @@ from video_analytics.xprotect.alarms import (
     AlarmSeverity,
     SuspectedDumpingEventPublisher,
 )
+from video_analytics.xprotect.client import XProtectError
 
 
 class RecordingClient:
-    def __init__(self, existing_alarm_id=None):
+    def __init__(
+        self,
+        existing_alarm_id=None,
+        event_error=None,
+        alarm_id="cd865c62-4962-4861-b109-5f4f1172f09e",
+    ):
         self.existing_alarm_id = existing_alarm_id
+        self.event_error = event_error
+        self.alarm_id = alarm_id
         self.calls = []
 
     def find_alarm_id_by_tag(self, tag):
@@ -19,6 +29,8 @@ class RecordingClient:
 
     def get_analytics_event_id(self, name):
         self.calls.append(("get_event", name))
+        if self.event_error:
+            raise self.event_error
         return "d8b5a5a4-161d-42c0-bfb8-6a023d6f43e1"
 
     def trigger_event(self, **kwargs):
@@ -31,7 +43,7 @@ class RecordingClient:
 
     def trigger_alarm(self, **kwargs):
         self.calls.append(("trigger_alarm", kwargs))
-        return {"data": {"id": "cd865c62-4962-4861-b109-5f4f1172f09e"}}
+        return {"data": {"id": self.alarm_id}} if self.alarm_id else {"data": {}}
 
 
 def test_fixed_medium_contract_and_native_alarm_payload():
@@ -78,3 +90,32 @@ def test_existing_incident_alarm_suppresses_event_and_alarm_republication():
     assert result.status == "already_published"
     assert result.alarm_id == existing
     assert [operation for operation, _ in client.calls] == ["find_alarm"]
+
+
+def test_native_alarm_does_not_depend_on_optional_analytics_event():
+    client = RecordingClient(event_error=XProtectError("synthetic missing event"))
+    publisher = SuspectedDumpingEventPublisher(client)
+
+    result = publisher.publish(
+        incident_id="incident-1",
+        camera_id="baaba7e1-7e9d-4732-8f46-6612ffc9df1e",
+        occurred_at_utc="2026-10-16T22:41:46.343Z",
+    )
+
+    operations = [operation for operation, _ in client.calls]
+    assert operations.index("trigger_alarm") < operations.index("get_event")
+    assert result.status == "published"
+    assert result.alarm_id == client.alarm_id
+    assert result.event_id is None
+
+
+def test_alarm_publication_requires_returned_native_alarm_id():
+    client = RecordingClient(alarm_id="")
+    publisher = SuspectedDumpingEventPublisher(client)
+
+    with pytest.raises(XProtectError, match="without returning an alarm id"):
+        publisher.publish(
+            incident_id="incident-1",
+            camera_id="baaba7e1-7e9d-4732-8f46-6612ffc9df1e",
+            occurred_at_utc="2026-10-16T22:41:46.343Z",
+        )

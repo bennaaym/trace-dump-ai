@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .client import XProtectClient
+from .client import XProtectClient, XProtectError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class AlarmPublication:
 
 
 class SuspectedDumpingEventPublisher:
-    """Publish the event consumed by the TraceDump XProtect Alarm Definition."""
+    """Create a native XProtect alarm and optionally publish its analytics event."""
 
     def __init__(self, client: XProtectClient) -> None:
         self.client = client
@@ -54,18 +54,6 @@ class SuspectedDumpingEventPublisher:
                 alarm_id=existing_alarm_id,
                 status="already_published",
             )
-        event_type_id = self._event_type_id or self.client.get_analytics_event_id(
-            ALARM_EVENT_TYPE_NAME
-        )
-        self._event_type_id = event_type_id
-        event_response = self.client.trigger_event(
-            event_type_id=event_type_id,
-            source=f"cameras/{camera_id}",
-            occurred_at_utc=occurred_at_utc,
-            tag=tag,
-        )
-        event_data = event_response.get("data") if isinstance(event_response, dict) else None
-        event_id = event_data.get("id") if isinstance(event_data, dict) else None
         priority_id = self._priority_id or self.client.get_alarm_priority_id(
             DEFAULT_ALARM_SEVERITY.value
         )
@@ -80,6 +68,33 @@ class SuspectedDumpingEventPublisher:
         )
         alarm_data = alarm_response.get("data") if isinstance(alarm_response, dict) else None
         alarm_id = alarm_data.get("id") if isinstance(alarm_data, dict) else None
+        if not isinstance(alarm_id, str) or not alarm_id:
+            raise XProtectError("XProtect accepted the alarm request without returning an alarm id")
+
+        event_id: str | None = None
+        try:
+            event_type_id = self._event_type_id or self.client.get_analytics_event_id(
+                ALARM_EVENT_TYPE_NAME
+            )
+            self._event_type_id = event_type_id
+            event_response = self.client.trigger_event(
+                event_type_id=event_type_id,
+                source=f"cameras/{camera_id}",
+                occurred_at_utc=occurred_at_utc,
+                tag=tag,
+            )
+            event_data = event_response.get("data") if isinstance(event_response, dict) else None
+            candidate_event_id = event_data.get("id") if isinstance(event_data, dict) else None
+            event_id = candidate_event_id if isinstance(candidate_event_id, str) else None
+        except (ValueError, XProtectError) as exc:
+            logger.warning(
+                "xprotect_dumping_event_optional_publish_failed incident_id=%s "
+                "alarm_id=%s camera_id=%s error=%s",
+                incident_id,
+                alarm_id,
+                camera_id,
+                exc,
+            )
         logger.info(
             "xprotect_dumping_alarm_published incident_id=%s event_id=%s alarm_id=%s "
             "camera_id=%s occurred_at_utc=%s severity=%s",

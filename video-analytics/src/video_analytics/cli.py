@@ -22,6 +22,7 @@ from .models import Camera
 from .workers.incident_pipeline import IncidentPipeline, SimulationStateStore
 from .workers.playback import PlaybackWorker
 from .workers.scene_checks import SceneCheckWorker
+from .workers.simulation import SimulationWorker
 from .xprotect.alarms import SuspectedDumpingEventPublisher
 from .xprotect.client import (
     XProtectClient,
@@ -36,6 +37,7 @@ from .xprotect.live_frames import (
     write_report_atomic,
 )
 from .xprotect.mip_live import MipLiveError
+from .xprotect.scene_sources import SceneSourceError, create_scene_source_adapter
 from .xprotect.video_export import VideoExportError, probe_video, run_mip_export
 
 
@@ -396,6 +398,7 @@ def command_monitor(settings: Settings, args: argparse.Namespace) -> int:
                 ),
                 poll_interval=settings.poll_interval,
                 poll_timeout=settings.poll_timeout,
+                recording_settle_seconds=settings.simulation_recording_settle_seconds,
                 repository=repository,
                 detector_metadata={
                     "detector": "MOG2+YOLO",
@@ -558,6 +561,14 @@ def build_parser() -> argparse.ArgumentParser:
     scene_checks.add_argument(
         "--poll-interval", type=float, default=5.0, help="queue polling interval in seconds"
     )
+    simulation = sub.add_parser(
+        "simulation-worker",
+        help="process durable monitoring and scene-source commands",
+    )
+    simulation.add_argument(
+        "--once", action="store_true", help="process at most one queued command and exit"
+    )
+    simulation.add_argument("--poll-interval", type=float, help="override SIMULATION_POLL_SECONDS")
     return parser
 
 
@@ -599,12 +610,46 @@ def command_scene_check_worker(settings: Settings, args: argparse.Namespace) -> 
         model_id=settings.hafnia_model,
         poll_interval=settings.poll_interval,
         poll_timeout=settings.poll_timeout,
+        recording_settle_seconds=settings.scene_check_recording_settle_seconds,
+        clip_seconds=settings.scene_check_clip_seconds,
     )
     if args.once:
         processed = worker.process_once()
         print(json.dumps({"processed": processed}))
         return 0
     worker.run(poll_seconds=args.poll_interval)
+    return 0
+
+
+def command_simulation_worker(settings: Settings, args: argparse.Namespace) -> int:
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+    if settings.simulation_monitor_window_seconds <= 0 or settings.simulation_monitor_fps <= 0:
+        raise ValueError("Simulation monitor window and FPS must be positive")
+    model_path = Path(settings.simulation_yolo_model)
+    if not settings.simulation_yolo_model or not model_path.is_file():
+        raise RuntimeError(
+            "SIMULATION_YOLO_MODEL must point to an existing local .pt file; "
+            "automatic model downloads are disabled"
+        )
+    worker = SimulationWorker(
+        SupabaseClient(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            timeout=settings.request_timeout,
+        ),
+        settings,
+        create_scene_source_adapter(
+            settings.scene_source_adapter,
+            settings.scene_source_control_url,
+            settings.scene_source_control_token,
+        ),
+    )
+    if args.once:
+        processed = worker.process_once()
+        print(json.dumps({"processed": processed}))
+        return 0
+    worker.run(poll_seconds=args.poll_interval or settings.simulation_poll_seconds)
     return 0
 
 
@@ -628,6 +673,8 @@ def main(argv: list[str] | None = None) -> int:
             return command_playback_worker(settings, args)
         if args.command == "scene-check-worker":
             return command_scene_check_worker(settings, args)
+        if args.command == "simulation-worker":
+            return command_simulation_worker(settings, args)
         return command_analyze(settings, args)
     except (
         ValueError,
@@ -639,6 +686,7 @@ def main(argv: list[str] | None = None) -> int:
         MipLiveError,
         CameraSyncError,
         SupabaseError,
+        SceneSourceError,
         OSError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)

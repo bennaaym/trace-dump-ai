@@ -306,3 +306,26 @@ def test_negative_analysis_is_persisted_without_incident_and_repeat_is_suppresse
         if operation["kind"] == "update" and operation["key"].endswith(":completed")
     ]
     assert completed[0]["values"]["dumping_detected"] == "no"
+
+
+def test_second_session_in_same_batch_is_deduplicated_after_completed_analysis(tmp_path: Path):
+    store = SimulationStateStore(tmp_path / "state.json")
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "synthetic-camera"),
+        hafnia=NegativeHafnia(),
+        prompt="synthetic test prompt",
+        prompt_version="dumping_v1",
+        model_id="traffic-general",
+        runs_root=tmp_path,
+        simulation_run_id="synthetic-two-segment-run",
+        state_store=store,
+        poll_interval=0,
+        poll_timeout=1,
+    )
+
+    result = pipeline.process([SESSION, {**SESSION, "id": "session-2"}], 1)
+
+    assert result["requests_submitted"] == 1
+    assert result["repeat_sessions_suppressed"] == 1
+    assert [item["status"] for item in result["results"]] == ["completed", "suppressed"]

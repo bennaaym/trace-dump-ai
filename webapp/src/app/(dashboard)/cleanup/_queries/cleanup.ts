@@ -66,7 +66,7 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
       supabase
         .from("cleanup_scene_checks")
         .select(
-          "id,cleanup_case_id,trigger_kind,scheduled_for,status,assessment,grounded_observations,limitations,snapshot_storage_path,captured_at,analysis_completed_at,model_id,error_message,cancellation_requested,created_at",
+          "id,cleanup_case_id,trigger_kind,scheduled_for,status,assessment,confidence,cleanup_score,summary,reported_waste,reported_location,current_observation,key_changes,current_waste_visible,raw_response,follow_up_source,gateway_input_limitations,comparison_reasoning,grounded_observations,limitations,object_region_observable,camera_reference_matched,snapshot_storage_path,captured_at,source_timestamp,analysis_completed_at,model_id,model_version,hafnia_summary_id,capture_camera_id,error_message,cancellation_requested,created_at",
         )
         .in("cleanup_case_id", caseIds)
         .order("created_at", { ascending: false }),
@@ -107,7 +107,7 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     supabase.from("cameras").select("id,name").in("id", cameraIds),
     supabase
       .from("evidence")
-      .select("incident_id,role,storage_path,created_at")
+      .select("incident_id,role,storage_path,captured_at,created_at,metadata")
       .in("incident_id", incidentIds)
       .in("role", ["after", "event", "representative"])
       .order("created_at", { ascending: false }),
@@ -118,13 +118,18 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     );
   }
   const cameras = camerasResult.data;
-  const evidenceByIncident = new Map<string, string>();
+  const evidenceByIncident = new Map<
+    string,
+    NonNullable<typeof evidenceResult.data>[number]
+  >();
   for (const item of evidenceResult.data ?? []) {
     if (!evidenceByIncident.has(item.incident_id)) {
-      evidenceByIncident.set(item.incident_id, item.storage_path);
+      evidenceByIncident.set(item.incident_id, item);
     }
   }
-  const evidencePaths = [...evidenceByIncident.values()];
+  const evidencePaths = [...evidenceByIncident.values()].map(
+    (item) => item.storage_path,
+  );
   const snapshotPaths = (checksResult.data ?? []).flatMap((item) =>
     item.snapshot_storage_path ? [item.snapshot_storage_path] : [],
   );
@@ -188,18 +193,46 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
       scheduledFor: item.scheduled_for,
       status: item.status,
       assessment: item.assessment,
+      confidence: item.confidence,
+      cleanupScore: item.cleanup_score,
+      summary: item.summary,
+      reportedWaste: item.reported_waste,
+      reportedLocation: item.reported_location,
+      currentObservation: item.current_observation,
+      keyChanges: Array.isArray(item.key_changes)
+        ? (item.key_changes as string[])
+        : [],
+      comparisonReasoning: Array.isArray(item.comparison_reasoning)
+        ? (item.comparison_reasoning as string[])
+        : [],
       groundedObservations: Array.isArray(item.grounded_observations)
         ? (item.grounded_observations as string[])
         : [],
       limitations: Array.isArray(item.limitations)
         ? (item.limitations as string[])
         : [],
+      rawResponse:
+        item.raw_response &&
+        typeof item.raw_response === "object" &&
+        !Array.isArray(item.raw_response)
+          ? (item.raw_response as Record<string, unknown>)
+          : null,
+      gatewayInputLimitations: Array.isArray(item.gateway_input_limitations)
+        ? (item.gateway_input_limitations as string[])
+        : [],
+      followUpSource: item.follow_up_source,
+      currentWasteVisible: item.current_waste_visible,
+      cameraReferenceMatched: item.camera_reference_matched,
+      sourceTimestamp: item.source_timestamp,
       snapshotUrl: item.snapshot_storage_path
         ? (snapshotUrls.get(item.snapshot_storage_path) ?? null)
         : null,
       capturedAt: item.captured_at,
       analyzedAt: item.analysis_completed_at,
       modelId: item.model_id,
+      modelVersion: item.model_version,
+      hafniaSummaryId: item.hafnia_summary_id,
+      captureCameraId: item.capture_camera_id,
       errorMessage: item.error_message,
       cancellationRequested: item.cancellation_requested,
     });
@@ -223,6 +256,7 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     const incident = incidentMap.get(row.incident_id);
     if (!incident) return [];
     const cameraId = detectionMap.get(incident.detection_id);
+    const originalEvidence = evidenceByIncident.get(row.incident_id);
     return [
       {
         id: row.id,
@@ -259,10 +293,24 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
           cameraName: cameraId
             ? (cameraMap.get(cameraId) ?? "Unknown camera")
             : "Unknown camera",
-          originalEvidenceUrl: evidenceByIncident.get(row.incident_id)
-            ? (evidenceUrls.get(evidenceByIncident.get(row.incident_id)!) ??
-              null)
+          originalEvidenceUrl: originalEvidence
+            ? (evidenceUrls.get(originalEvidence.storage_path) ?? null)
             : null,
+          originalEvidenceCapturedAt:
+            originalEvidence?.captured_at ??
+            originalEvidence?.created_at ??
+            null,
+          originalEvidenceRegion:
+            originalEvidence?.metadata &&
+            typeof originalEvidence.metadata === "object" &&
+            !Array.isArray(originalEvidence.metadata) &&
+            originalEvidence.metadata.object_region &&
+            typeof originalEvidence.metadata.object_region === "object"
+              ? (originalEvidence.metadata.object_region as Record<
+                  string,
+                  unknown
+                >)
+              : null,
         },
         sceneChecks: checksMap.get(row.id) ?? [],
         notifications: notificationsMap.get(row.id) ?? [],

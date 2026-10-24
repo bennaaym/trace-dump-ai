@@ -81,7 +81,7 @@ class PendingSyncStore:
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
+            _replace_with_retry(temporary, self.path)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
@@ -109,12 +109,12 @@ class SupabaseAnalysisRepository:
     def queue(self, operation: dict[str, Any]) -> None:
         self.outbox.append(operation)
 
-    def flush(self) -> dict[str, Any]:
+    def flush(self, *, max_operations: int | None = None) -> dict[str, Any]:
         synced = 0
         error: str | None = None
         with self.outbox.locked():
             operations = self.outbox._read()
-            while operations:
+            while operations and (max_operations is None or synced < max_operations):
                 operation = operations[0]
                 try:
                     self._execute(operation)
@@ -139,10 +139,17 @@ class SupabaseAnalysisRepository:
             )
             return
         if kind == "update":
+            params = {"id": f"eq.{operation['id']}"}
+            stage = operation.get("stage") or operation.get("key", "").rsplit(":", 1)[-1]
+            if operation["table"] == "analyses" and stage == "processing":
+                params["status"] = "eq.pending"
+            elif operation["table"] == "analyses" and stage == "failed":
+                # A late local failure must never regress an analysis already completed remotely.
+                params["status"] = "neq.completed"
             self.client.request(
                 "PATCH",
                 f"/rest/v1/{operation['table']}",
-                params={"id": f"eq.{operation['id']}"},
+                params=params,
                 json=operation["values"],
                 headers={"Prefer": "return=minimal"},
             )
@@ -178,6 +185,7 @@ def update_operation(
         "kind": "update",
         "table": table,
         "id": record_id,
+        "stage": stage,
         "values": values,
     }
 
@@ -189,3 +197,15 @@ def upload_operation(storage_path: str, local_path: str) -> dict[str, Any]:
         "storage_path": storage_path,
         "local_path": local_path,
     }
+
+
+def _replace_with_retry(source: str, destination: Path, attempts: int = 5) -> None:
+    """Tolerate brief Windows file locks without weakening atomic replacement."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (2**attempt))

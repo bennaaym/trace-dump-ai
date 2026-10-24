@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ClipboardCheck,
+  FlaskConical,
   LogOut,
   MapPinned,
   Menu,
@@ -33,9 +34,11 @@ const navigation = [
 export function DashboardShell({
   children,
   userEmail,
+  canUseSimulation,
 }: {
   children: ReactNode;
   userEmail: string;
+  canUseSimulation: boolean;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -174,10 +177,23 @@ export function DashboardShell({
                       {userEmail}
                     </p>
                   </div>
+                  {canUseSimulation && (
+                    <>
+                      <Link
+                        href="/simulation"
+                        onClick={() => setAccountOpen(false)}
+                        className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        <FlaskConical className="size-4" />
+                        Demo Lab
+                      </Link>
+                      <div className="my-1 border-t" />
+                    </>
+                  )}
                   <Link
                     href="/settings"
                     onClick={() => setAccountOpen(false)}
-                    className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
                   >
                     <Settings2 className="size-4" />
                     Settings

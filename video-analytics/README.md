@@ -62,6 +62,8 @@ video-analytics export --camera CAMERA --start 2026-10-16T14:45:14Z --end 2026-1
 video-analytics monitor --camera CAMERA --dry-run --duration 60 --fps 5 --detect --yolo-model C:\models\yolo11n.pt
 video-analytics scene-check-worker
 video-analytics scene-check-worker --once
+video-analytics simulation-worker
+video-analytics simulation-worker --once
 ```
 
 ## Cleanup deadline scene checks
@@ -73,6 +75,44 @@ with expiring leases, so worker restarts do not create duplicate jobs. A due
 check captures two advancing `JPEGLiveSource` frames, stores the fresh snapshot
 in the private `cleanup-scene-checks` bucket, and analyzes the corresponding
 recent XProtect recording through the existing Hafnia model.
+
+Apply `20261023160000_create_simulation_control_center.sql`,
+`20261023170000_fix_cleanup_scene_check_claim.sql`, and
+`20261023180000_add_simulation_pipeline_diagnostics.sql`, then run
+`video-analytics simulation-worker` as another long-lived process. It
+acknowledges durable Start, Stop, and scene-source commands from Supabase.
+Set `SIMULATION_YOLO_MODEL` to an existing local model file (prefer an absolute
+path when the worker runs as a service). The simulation worker refuses bare or
+missing model names rather than allowing Ultralytics to download weights.
+`SIMULATION_ACQUISITION_RETRIES` bounds live-source reconnects, and
+`SIMULATION_RECORDING_SETTLE_SECONDS` delays Hafnia submission until XProtect
+has had time to commit the selected recording interval.
+Each Simulation Center run captures for a fixed 60-second window. Camera
+capture then stops automatically; a Hafnia request already submitted during
+the window is allowed to complete before the run is marked stopped.
+
+The scene-source boundary is intentionally independent of XProtect. With
+`SCENE_SOURCE_ADAPTER=http`, the worker calls a trusted private controller:
+
+- `POST /v1/cameras/{camera-guid}/scene` with `source_type` and the opaque
+  `source_reference` stored in `camera_scene_sources`.
+- `GET /v1/cameras/{camera-guid}/scene`, returning `source_reference`, `ready`,
+  and an optional `generation` string.
+
+The worker reports Ready only after that controller confirms the exact source
+and XProtect's `JPEGLiveSource` returns a changed, fresh frame. The default is
+`unavailable`: the installed StableFPS driver does not expose a verified
+runtime clip-switch API. A native StableFPS controller or an RTSP/MediaMTX
+publisher can implement this contract without changing the page or schema.
+
+For deterministic demos, `SCENE_SOURCE_ADAPTER=xprotect_camera` maps an
+operational camera to a separate disabled XProtect camera whose
+`is_scene_check_fixture` flag is true. The fixture remains absent from maps and
+monitoring. Scene switching verifies its fresh live feed, and the subsequent
+scene check records that fixture camera as the actual capture source.
+Naming a synchronized camera `CAM-NN-CLEAN` automatically pairs it with
+`CAM-NN` and creates exactly two active options: `Uncleaned scene` uses the
+operational camera, while `Clean scene` uses the hidden fixture camera.
 
 The installed Hafnia Gateway accepts exactly one XProtect clip and does not
 support paired uploaded images. The worker therefore uses the original
@@ -93,13 +133,16 @@ Run `scripts/setup-xprotect-alarm.ps1` once on the XProtect machine to create th
 `TraceDump AI Suspected Dumping` analytics event. Pass an XProtect basic-user
 `PSCredential` and `-BasicUser`; the credential is used in memory and is not saved.
 
-For each newly created positive incident, the worker triggers that event and then
-creates a native alarm through the documented Alarms REST API. The alarm contract
+For each newly created positive incident, the worker first creates a native alarm
+through the documented Alarms REST API. It then publishes the optional analytics
+event when that event is configured; missing event configuration cannot suppress
+the native alarm. The alarm contract
 is centralized in `xprotect/alarms.py`: title `TraceDump AI — Suspected Dumping`,
 description `AI-detected suspected dumping. Human review required.`, and fixed
 priority `Medium`. The API event and alarm both use the original camera GUID and
 UTC incident timestamp. The incident ID is carried as a tag and checked before
-publishing to avoid intentional duplicates during reprocessing. No XProtect Alarm
+publishing to avoid intentional duplicates during reprocessing. Publication is
+successful only when XProtect returns the created alarm ID. No XProtect Alarm
 Definition or database migration is required because priority is supplied directly
 to the native alarm API.
 

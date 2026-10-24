@@ -15,6 +15,7 @@ export async function getOperationsMapData(): Promise<OperationsMapData> {
       supabase
         .from("cameras")
         .select("id,name,latitude,longitude,location_source,enabled")
+        .eq("is_scene_check_fixture", false)
         .order("name"),
       supabase.from("detections").select("id,camera_id,created_at"),
       supabase

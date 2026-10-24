@@ -26,14 +26,17 @@ export function LiveCameraPlayer({
   const [playerState, setPlayerState] = useState<PlayerState>("connecting");
   const [error, setError] = useState("Live stream unavailable");
   const [retryKey, setRetryKey] = useState(0);
+  const [transport, setTransport] = useState<"webrtc" | "jpeg">("webrtc");
 
   useEffect(() => {
+    if (transport === "jpeg") return;
     let cancelled = false;
     let peerConnection: RTCPeerConnection | null = null;
     let session: string | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let mediaTimer: ReturnType<typeof setTimeout> | null = null;
+    let stallTimer: ReturnType<typeof setInterval> | null = null;
     let reconnects = 0;
     let failureInProgress = false;
     const candidates = new Set<string>();
@@ -43,9 +46,11 @@ export function LiveCameraPlayer({
       if (pollTimer) clearTimeout(pollTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (mediaTimer) clearTimeout(mediaTimer);
+      if (stallTimer) clearInterval(stallTimer);
       pollTimer = null;
       reconnectTimer = null;
       mediaTimer = null;
+      stallTimer = null;
     };
 
     const release = async () => {
@@ -82,8 +87,19 @@ export function LiveCameraPlayer({
         return;
       }
       setError(message);
-      setPlayerState("error");
-      void release();
+      setPlayerState("reconnecting");
+      void release().then(() => {
+        if (!cancelled) setTransport("jpeg");
+      });
+    };
+
+    const fallbackForStalledVideo = () => {
+      if (cancelled || failureInProgress) return;
+      failureInProgress = true;
+      setPlayerState("reconnecting");
+      void release().then(() => {
+        if (!cancelled) setTransport("jpeg");
+      });
     };
 
     const pollCandidates = async () => {
@@ -142,6 +158,19 @@ export function LiveCameraPlayer({
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
             void videoRef.current.play().catch(() => undefined);
+            let lastTime = videoRef.current.currentTime;
+            let unchangedChecks = 0;
+            stallTimer = setInterval(() => {
+              const video = videoRef.current;
+              if (!video || !mediaReceivedRef.current) return;
+              if (video.currentTime > lastTime + 0.01) {
+                lastTime = video.currentTime;
+                unchangedChecks = 0;
+                return;
+              }
+              unchangedChecks += 1;
+              if (unchangedChecks >= 3) fallbackForStalledVideo();
+            }, 1_500);
           }
         };
         peer.onicecandidate = (event) => {
@@ -192,26 +221,44 @@ export function LiveCameraPlayer({
       cancelled = true;
       void release();
     };
-  }, [cameraId, retryKey]);
+  }, [cameraId, retryKey, transport]);
 
   const showLoading =
-    playerState === "connecting" || playerState === "reconnecting";
+    transport === "webrtc" &&
+    (playerState === "connecting" || playerState === "reconnecting");
 
   return (
     <div className="relative m-4 aspect-video overflow-hidden rounded-xl border border-slate-700 bg-slate-950 text-white">
-      <video
-        ref={videoRef}
-        aria-label={`Live video from ${cameraName}`}
-        autoPlay
-        muted
-        playsInline
-        onPlaying={() => {
-          mediaReceivedRef.current = true;
-          setPlayerState("live");
-        }}
-        className="size-full object-contain"
-      />
-      {playerState === "live" && (
+      {transport === "webrtc" ? (
+        <video
+          ref={videoRef}
+          aria-label={`Live video from ${cameraName}`}
+          autoPlay
+          muted
+          playsInline
+          onPlaying={() => {
+            mediaReceivedRef.current = true;
+            setPlayerState("live");
+          }}
+          className="size-full object-contain"
+        />
+      ) : (
+        // The authenticated MJPEG endpoint is the supported live-JPEG fallback
+        // when the browser's H.264 WebRTC track connects but stops advancing.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/cameras/${encodeURIComponent(cameraId)}/live/jpeg?attempt=${retryKey}`}
+          alt={`Live video from ${cameraName}`}
+          onLoad={() => setPlayerState("live")}
+          onError={() => {
+            setError("The XProtect live JPEG stream stopped.");
+            setPlayerState("error");
+          }}
+          className="size-full object-contain"
+        />
+      )}
+      {(playerState === "live" ||
+        (transport === "jpeg" && playerState !== "error")) && (
         <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-red-600/95 px-2 py-1 text-[10px] font-bold tracking-wide shadow">
           <span className="size-1.5 rounded-full bg-white" /> LIVE
         </span>
@@ -240,6 +287,7 @@ export function LiveCameraPlayer({
               type="button"
               onClick={() => {
                 setPlayerState("connecting");
+                setTransport("webrtc");
                 setRetryKey((value) => value + 1);
               }}
               className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold hover:bg-slate-800"
@@ -249,7 +297,7 @@ export function LiveCameraPlayer({
           </div>
         </div>
       )}
-      {playerState === "live" && (
+      {transport === "webrtc" && playerState === "live" && (
         <button
           type="button"
           onClick={() => videoRef.current?.requestFullscreen()}

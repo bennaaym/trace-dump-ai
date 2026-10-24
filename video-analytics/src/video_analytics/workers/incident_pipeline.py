@@ -177,6 +177,7 @@ class IncidentPipeline:
         state_store: SimulationStateStore,
         poll_interval: float,
         poll_timeout: float,
+        recording_settle_seconds: float = 2.0,
         repository: AnalysisRepository | None = None,
         detector_metadata: dict[str, Any] | None = None,
         alarm_publisher: SuspectedDumpingEventPublisher | None = None,
@@ -192,6 +193,7 @@ class IncidentPipeline:
         self.state = state_store
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
+        self.recording_settle_seconds = recording_settle_seconds
         self.repository = repository
         self.detector_metadata = detector_metadata or {}
         self.alarm_publisher = alarm_publisher
@@ -254,6 +256,7 @@ class IncidentPipeline:
         initial_sync = self._flush()
         results: list[dict[str, Any]] = []
         requests_submitted = 0
+        requests_attempted = 0
         suppressed = 0
         for session in sessions:
             existing = self.state.get(self.simulation_run_id, self.camera.id)
@@ -284,6 +287,19 @@ class IncidentPipeline:
                     }
                 results.append(result)
                 continue
+            if existing and (
+                existing.get("request_submitted")
+                or existing.get("status") in {"reserved", "submitted", "completed"}
+            ):
+                suppressed += 1
+                results.append(
+                    {
+                        "status": "suppressed",
+                        "reason": f"camera already {existing.get('status')} in simulation run",
+                        "summary_id": existing.get("summary_id"),
+                    }
+                )
+                continue
             if requests_submitted >= max_requests:
                 results.append(
                     {
@@ -305,11 +321,14 @@ class IncidentPipeline:
                 continue
             detection_id, analysis_id = self._queue_detection_and_analysis(session)
             end = validate_utc_timestamp(session["recording_end_utc"])
-            wait_seconds = (end + timedelta(seconds=2) - datetime.now(UTC)).total_seconds()
+            wait_seconds = (
+                end + timedelta(seconds=self.recording_settle_seconds) - datetime.now(UTC)
+            ).total_seconds()
             if wait_seconds > 0:
                 time.sleep(wait_seconds)
             summary_id: str | None = None
             try:
+                requests_attempted += 1
                 request, created = self.hafnia.create_summary(
                     self.prompt, session["xprotect_uri"], self.model_id
                 )
@@ -352,10 +371,17 @@ class IncidentPipeline:
                     error=str(exc),
                     failed_at_utc=_utc_now(),
                 )
-                result = {"status": "failed", "error": str(exc)}
+                result = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "summary_id": summary_id,
+                    "detection_id": detection_id,
+                    "analysis_id": analysis_id,
+                }
             results.append(result)
         return {
             "requests_submitted": requests_submitted,
+            "requests_attempted": requests_attempted,
             "repeat_sessions_suppressed": suppressed,
             "results": results,
             "initial_database_sync": initial_sync,

@@ -94,8 +94,21 @@ def stream_live_jpegs(
             try:
                 _, timestamp, encoded = line.split("|", 2)
                 jpeg = base64.b64decode(encoded, validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise MipLiveError("MIP live helper returned a malformed frame") from exc
+            except ValueError as exc:
+                raise MipLiveError(
+                    "MIP live helper FRAME protocol did not contain three fields "
+                    f"(line_chars={len(line)}, separators={line.count('|')})"
+                ) from exc
+            except binascii.Error as exc:
+                raise MipLiveError(
+                    "MIP live helper FRAME payload was not valid base64 "
+                    f"(line_chars={len(line)}, encoded_chars={len(encoded)})"
+                ) from exc
+            if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
+                raise MipLiveError(
+                    "MIP live helper FRAME payload was not a complete JPEG "
+                    f"(decoded_bytes={len(jpeg)})"
+                )
             yield XProtectJpeg(camera_id=camera_id, frame_datetime=timestamp, jpeg_bytes=jpeg)
         return_code = process.wait(timeout=10)
         if return_code != 0:

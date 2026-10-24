@@ -294,6 +294,14 @@ function CaseDrawer({
     useState<ResolutionOutcome>("cleanup_completed");
   const [error, setError] = useState<string | null>(null);
   const resolved = cleanupCase.status === "resolved";
+  const latestSceneCheck = cleanupCase.sceneChecks[0] ?? null;
+  const resolutionNotes =
+    cleanupCase.resolutionSource === "ai"
+      ? latestSceneCheck?.cleanupScore === null ||
+        latestSceneCheck?.cleanupScore === undefined
+        ? "Site cleared by Hafnia AI Review."
+        : `Site cleared by Hafnia AI Review with an AI cleanup score of ${Math.round(latestSceneCheck.cleanupScore)}/100.`
+      : (cleanupCase.resolutionNotes ?? "No notes supplied");
   const activeTeams = selectableCleanupTeams(teams, cleanupCase.assignedTeamId);
   const assignmentDirty =
     teamId !== (cleanupCase.assignedTeamId ?? "") ||
@@ -539,12 +547,14 @@ function CaseDrawer({
                   <dt className="text-emerald-700">Method</dt>
                   <dd>
                     {cleanupCase.resolutionSource === "ai"
-                      ? "Validated AI scene check"
+                      ? "AI Review"
                       : "Human review"}
                   </dd>
                   <dt className="text-emerald-700">Verified by</dt>
                   <dd>
-                    {cleanupCase.resolverLabel ?? "Authorized coordinator"}
+                    {cleanupCase.resolutionSource === "ai"
+                      ? "Hafnia AI"
+                      : (cleanupCase.resolverLabel ?? "Authorized coordinator")}
                   </dd>
                   <dt className="text-emerald-700">Verified at</dt>
                   <dd>
@@ -553,7 +563,7 @@ function CaseDrawer({
                       : "Not recorded"}
                   </dd>
                   <dt className="text-emerald-700">Notes</dt>
-                  <dd>{cleanupCase.resolutionNotes ?? "No notes supplied"}</dd>
+                  <dd>{resolutionNotes}</dd>
                 </dl>
                 <VerificationEvidence incidentId={cleanupCase.incidentId} />
               </div>
@@ -772,9 +782,13 @@ function SceneCheckPanel({
   const next = cleanupCase.sceneChecks.find(
     (check) => check.status === "scheduled",
   );
-  const attention = cleanupCase.notifications.filter(
-    (notification) => !notification.acknowledgedAt,
-  );
+  const attention =
+    cleanupCase.status === "resolved"
+      ? []
+      : cleanupCase.notifications.filter(
+          (notification) => !notification.acknowledgedAt,
+        );
+  const presentation = cleanupSceneCheckPresentation(latest);
   return (
     <div className="space-y-3 text-xs">
       {attention.map((notification) => (
@@ -797,64 +811,153 @@ function SceneCheckPanel({
         </div>
       ))}
 
-      <dl className="grid grid-cols-[110px_1fr] gap-y-2 rounded-lg bg-slate-50 p-3 leading-5">
-        <dt className="text-slate-500">Next check</dt>
-        <dd>{next ? formatDateTime(next.scheduledFor) : "None scheduled"}</dd>
-        <dt className="text-slate-500">Current status</dt>
-        <dd className="font-semibold capitalize">
-          {latest?.status.replace("_", " ") ?? "Not scheduled"}
-          {latest?.cancellationRequested ? " · cancellation requested" : ""}
-        </dd>
-        <dt className="text-slate-500">Assessment</dt>
-        <dd className="capitalize">
-          {latest?.assessment?.replace("_", " ") ?? "Not available"}
-        </dd>
-        <dt className="text-slate-500">Captured</dt>
-        <dd>
-          {latest?.capturedAt
-            ? formatDateTime(latest.capturedAt)
-            : "Not captured"}
-        </dd>
-        <dt className="text-slate-500">Analyzed</dt>
-        <dd>
-          {latest?.analyzedAt
-            ? formatDateTime(latest.analyzedAt)
-            : "Not analyzed"}
-        </dd>
-      </dl>
+      <div className="rounded-lg border bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-heading text-base font-bold text-slate-900">
+            {presentation.title}
+          </p>
+          <span className="font-semibold text-slate-500 capitalize">
+            {latest?.status.replace("_", " ") ?? "Not scheduled"}
+          </span>
+        </div>
+        <p className="mt-1 leading-5 text-slate-600">{presentation.summary}</p>
+        {latest?.cleanupScore !== null &&
+          latest?.cleanupScore !== undefined && (
+            <p className="mt-1 text-slate-500">
+              AI cleanup score: {Math.round(latest.cleanupScore)}/100
+            </p>
+          )}
+        {next && (
+          <p className="mt-1 text-slate-500">
+            Next check: {formatDateTime(next.scheduledFor)}
+          </p>
+        )}
+      </div>
 
       {(cleanupCase.incident.originalEvidenceUrl || latest?.snapshotUrl) && (
         <div className="grid grid-cols-2 gap-2">
           <EvidenceImage
-            label="Original post-dumping evidence"
+            label="Original evidence"
             url={cleanupCase.incident.originalEvidenceUrl}
+            timestamp={cleanupCase.incident.originalEvidenceCapturedAt}
+            region={cleanupCase.incident.originalEvidenceRegion}
           />
           <EvidenceImage
-            label="Latest follow-up"
+            label="Latest scene"
             url={latest?.snapshotUrl ?? null}
+            timestamp={latest?.sourceTimestamp ?? latest?.capturedAt ?? null}
+            region={cleanupCase.incident.originalEvidenceRegion}
+            detail={latest?.assessment ? presentation.title : undefined}
           />
         </div>
       )}
 
-      {!!latest?.groundedObservations.length && (
-        <div>
-          <p className="font-semibold text-slate-700">Grounded observations</p>
-          <ul className="mt-1 list-disc space-y-1 pl-4 text-slate-600">
-            {latest.groundedObservations.map((observation) => (
-              <li key={observation}>{observation}</li>
-            ))}
-          </ul>
+      {latest?.status === "completed" && (
+        <div className="rounded-lg border p-3">
+          <p className="font-semibold text-slate-800">What changed?</p>
+          <dl className="mt-2 space-y-2 leading-5">
+            {latest.reportedWaste && (
+              <div>
+                <dt className="font-semibold text-slate-700">Reported waste</dt>
+                <dd className="text-slate-600">
+                  {latest.reportedWaste}
+                  {latest.reportedLocation
+                    ? ` — ${latest.reportedLocation}`
+                    : ""}
+                </dd>
+              </div>
+            )}
+            {(latest.currentObservation || latest.groundedObservations[0]) && (
+              <div>
+                <dt className="font-semibold text-slate-700">
+                  Latest observation
+                </dt>
+                <dd className="text-slate-600">
+                  {latest.currentObservation ?? latest.groundedObservations[0]}
+                </dd>
+              </div>
+            )}
+            <div>
+              <dt className="font-semibold text-slate-700">Conclusion</dt>
+              <dd className="text-slate-600">
+                {latest.summary ?? presentation.summary}
+              </dd>
+            </div>
+          </dl>
         </div>
-      )}
-      {!!latest?.limitations.length && (
-        <p className="rounded-lg bg-amber-50 p-3 leading-5 text-amber-900">
-          {latest.limitations.join(" ")}
-        </p>
       )}
       {latest?.errorMessage && (
         <p className="rounded-lg bg-red-50 p-3 text-red-800">
           {latest.errorMessage}
         </p>
+      )}
+
+      {latest && (
+        <details className="rounded-lg border p-3">
+          <summary className="cursor-pointer font-semibold text-teal-700">
+            Technical Details
+          </summary>
+          <dl className="mt-3 grid grid-cols-[125px_1fr] gap-y-1.5 leading-5">
+            <dt className="text-slate-500">Scene Check ID</dt>
+            <dd className="truncate font-mono" title={latest.id}>
+              {latest.id}
+            </dd>
+            <dt className="text-slate-500">Camera GUID</dt>
+            <dd
+              className="truncate font-mono"
+              title={latest.captureCameraId ?? undefined}
+            >
+              {latest.captureCameraId ?? "—"}
+            </dd>
+            <dt className="text-slate-500">Follow-up source</dt>
+            <dd>{latest.followUpSource ?? "—"}</dd>
+            <dt className="text-slate-500">Source verification</dt>
+            <dd>
+              {latest.cameraReferenceMatched === null
+                ? "—"
+                : latest.cameraReferenceMatched
+                  ? "Camera reference matched"
+                  : "Camera reference mismatch"}
+            </dd>
+            <dt className="text-slate-500">Hafnia model</dt>
+            <dd>
+              {[latest.modelId, latest.modelVersion]
+                .filter(Boolean)
+                .join(" ") || "—"}
+            </dd>
+            <dt className="text-slate-500">Hafnia summary</dt>
+            <dd
+              className="truncate font-mono"
+              title={latest.hafniaSummaryId ?? undefined}
+            >
+              {latest.hafniaSummaryId ?? "—"}
+            </dd>
+            <dt className="text-slate-500">Captured</dt>
+            <dd>
+              {latest.capturedAt ? formatDateTime(latest.capturedAt) : "—"}
+            </dd>
+            <dt className="text-slate-500">Analyzed</dt>
+            <dd>
+              {latest.analyzedAt ? formatDateTime(latest.analyzedAt) : "—"}
+            </dd>
+            {latest.cleanupScore !== null && (
+              <>
+                <dt className="text-slate-500">AI cleanup score</dt>
+                <dd>{Math.round(latest.cleanupScore)}/100</dd>
+              </>
+            )}
+          </dl>
+          {!!latest.gatewayInputLimitations.length && (
+            <p className="mt-2 text-slate-500">
+              {latest.gatewayInputLimitations.join(" ")}
+            </p>
+          )}
+          {latest.rawResponse && (
+            <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-950 p-2 text-[10px] text-slate-100">
+              {JSON.stringify(latest.rawResponse, null, 2)}
+            </pre>
+          )}
+        </details>
       )}
 
       {!cleanupCase.sceneChecks.length ? (
@@ -893,18 +996,51 @@ function SceneCheckPanel({
   );
 }
 
-function EvidenceImage({ label, url }: { label: string; url: string | null }) {
+function EvidenceImage({
+  label,
+  url,
+  timestamp,
+  region,
+  detail,
+}: {
+  label: string;
+  url: string | null;
+  timestamp?: string | null;
+  region?: Record<string, unknown> | null;
+  detail?: string;
+}) {
+  const box = normalizedEvidenceRegion(region);
   return (
     <figure>
       <div className="relative aspect-video overflow-hidden rounded-lg bg-slate-100">
         {url ? (
-          <Image
-            src={url}
-            alt={label}
-            fill
-            unoptimized
-            className="object-cover"
-          />
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="absolute inset-0"
+            title="Open full-size evidence"
+          >
+            <Image
+              src={url}
+              alt={label}
+              fill
+              unoptimized
+              className="object-cover"
+            />
+            {box && (
+              <span
+                aria-label="Reported waste region"
+                className="pointer-events-none absolute border-2 border-amber-400 bg-amber-300/15"
+                style={{
+                  left: `${box.x}%`,
+                  top: `${box.y}%`,
+                  width: `${box.width}%`,
+                  height: `${box.height}%`,
+                }}
+              />
+            )}
+          </a>
         ) : (
           <span className="grid h-full place-items-center p-2 text-center text-[10px] text-slate-400">
             Not available
@@ -913,9 +1049,72 @@ function EvidenceImage({ label, url }: { label: string; url: string | null }) {
       </div>
       <figcaption className="mt-1 text-[10px] text-slate-500">
         {label}
+        {timestamp && <> · {formatDateTime(timestamp)}</>}
+        {detail && <span className="block">{detail}</span>}
       </figcaption>
     </figure>
   );
+}
+
+function cleanupSceneCheckPresentation(
+  check: CleanupCase["sceneChecks"][number] | null,
+) {
+  if (!check)
+    return {
+      title: "Not scheduled",
+      summary: "A check is scheduled when a cleanup deadline is assigned.",
+    };
+  const title =
+    check.assessment === "appears_cleared"
+      ? "Appears cleared"
+      : check.assessment === "still_visible"
+        ? "Waste still visible"
+        : check.assessment === "uncertain"
+          ? "Unable to determine"
+          : check.status === "running"
+            ? "Scene Check in progress"
+            : "Awaiting Scene Check";
+  const fallback =
+    check.assessment === "appears_cleared"
+      ? "The reported waste appears absent from the observable area."
+      : check.assessment === "still_visible"
+        ? "The reported waste remains visible in the inspected area."
+        : check.assessment === "uncertain"
+          ? "The footage did not support a reliable cleanup decision."
+          : "No assessment is available yet.";
+  return {
+    title,
+    summary:
+      check.summary ??
+      check.comparisonReasoning[0] ??
+      check.groundedObservations[0] ??
+      fallback,
+  };
+}
+
+function normalizedEvidenceRegion(
+  region: Record<string, unknown> | null | undefined,
+) {
+  if (!region) return null;
+  const values = ["x", "y", "width", "height"].map((key) => region[key]);
+  if (
+    values.some(
+      (value) =>
+        typeof value !== "number" ||
+        !Number.isFinite(value) ||
+        value < 0 ||
+        value > 1,
+    )
+  )
+    return null;
+  const [x, y, width, height] = values as number[];
+  if (width <= 0 || height <= 0 || x + width > 1 || y + height > 1) return null;
+  return {
+    x: x * 100,
+    y: y * 100,
+    width: width * 100,
+    height: height * 100,
+  };
 }
 
 function PrimaryButton({

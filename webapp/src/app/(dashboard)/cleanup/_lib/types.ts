@@ -15,19 +15,41 @@ interface CleanupSceneCheck {
     | "cancelled"
     | "superseded";
   assessment: SceneCheckAssessment | null;
+  confidence: number | null;
+  cleanupScore: number | null;
+  summary: string | null;
+  reportedWaste: string | null;
+  reportedLocation: string | null;
+  currentObservation: string | null;
+  keyChanges: string[];
+  comparisonReasoning: string[];
   groundedObservations: string[];
   limitations: string[];
+  rawResponse: Record<string, unknown> | null;
+  gatewayInputLimitations: string[];
+  followUpSource: string | null;
+  currentWasteVisible: boolean | null;
+  cameraReferenceMatched: boolean | null;
+  sourceTimestamp: string | null;
   snapshotUrl: string | null;
   capturedAt: string | null;
   analyzedAt: string | null;
   modelId: string | null;
+  modelVersion: string | null;
+  hafniaSummaryId: string | null;
+  captureCameraId: string | null;
   errorMessage: string | null;
   cancellationRequested: boolean;
 }
 
 interface CleanupNotification {
   id: string;
-  kind: "still_visible" | "uncertain" | "capture_failed" | "analysis_failed";
+  kind:
+    | "still_visible"
+    | "uncertain"
+    | "capture_failed"
+    | "analysis_failed"
+    | "human_review_required";
   title: string;
   message: string;
   createdAt: string;
@@ -80,6 +102,8 @@ export interface CleanupCase {
     locationSource: "real" | "simulated";
     cameraName: string;
     originalEvidenceUrl: string | null;
+    originalEvidenceCapturedAt: string | null;
+    originalEvidenceRegion: Record<string, unknown> | null;
   };
   sceneChecks: CleanupSceneCheck[];
   notifications: CleanupNotification[];

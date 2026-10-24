@@ -3,7 +3,6 @@ export type ReviewStatus =
   "pending_review" | "confirmed" | "dismissed" | "needs_investigation";
 export type IncidentClassification =
   "static_dumping" | "dynamic_dumping" | "unknown_dumping";
-export type EvidenceRole = "before" | "event" | "after" | "representative";
 export type PlaybackStatus =
   "available" | "preparing" | "unavailable" | "failed" | "expired";
 
@@ -54,18 +53,6 @@ export interface OperationsCleanupCase {
   latitude: number | null;
   longitude: number | null;
   locationSource: "real" | "simulated";
-}
-
-interface EvidenceRecord {
-  id: string;
-  role: EvidenceRole;
-  storagePath: string;
-  signedUrl: string | null;
-  capturedAt: string | null;
-  offsetSeconds: number | null;
-  sha256: string | null;
-  extractionMethod: string | null;
-  metadata: Record<string, unknown>;
 }
 
 export interface IncidentListItem {
@@ -130,7 +117,6 @@ export interface IncidentDetail extends IncidentListItem {
     retentionExpiresAt: string | null;
     errorCode: string | null;
   };
-  evidence: EvidenceRecord[];
   reviews: Array<{
     id: string;
     reviewerId: string;

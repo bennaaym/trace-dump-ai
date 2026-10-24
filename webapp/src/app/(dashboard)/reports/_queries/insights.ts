@@ -20,7 +20,10 @@ export async function getInsights(range: InsightsRange, referenceTime: string) {
       supabase.from("detections").select("id,camera_id"),
       supabase.from("incident_reviews").select("incident_id,created_at"),
       supabase.from("analyses").select("id,status,dumping_detected,created_at"),
-      supabase.from("cameras").select("id,name"),
+      supabase
+        .from("cameras")
+        .select("id,name")
+        .eq("is_scene_check_fixture", false),
       supabase
         .from("cleanup_cases")
         .select("id,status,due_at,resolution_outcome,created_at,resolved_at"),
