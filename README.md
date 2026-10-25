@@ -4,8 +4,7 @@ TraceDump AI is a foundation for detecting and investigating suspected waste-dum
 
 ## Architecture
 
-The integration of playback reliability, investigation timelines, plate evidence, and incident priority is documented in [features 1–4](docs/FEATURES_1_TO_4_INTEGRATION.md), including checks and the manual video-test command. The separate Mohsin downloadable-report implementation is excluded from this integration.
-
+The integration of playback reliability, investigation timelines, plate evidence, and incident priority is documented in [features 1–4](docs/FEATURES_1_TO_4_INTEGRATION.md), including checks and the manual video-test command. 
 - **Next.js (`webapp/`)**: investigator workflows, server-rendered queries, and validated Server Action mutations.
 - **Python (`video-analytics/`)**: XProtect acquisition, motion/object detection, Hafnia analysis, evidence extraction, and worker orchestration.
 - **Supabase (`database/`)**: PostgreSQL records, authentication, and evidence storage, managed through reviewed migrations.
