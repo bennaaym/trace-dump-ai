@@ -69,6 +69,3 @@ Install `.[dev,detection]` only when Torch and Ultralytics are required. Model w
 
 `database/migrations/` will hold ordered Supabase SQL migrations once the schema is designed. It does not contain a speculative schema. Coding rules live in `.ai/rules/`, concise project context is in `.ai/context/project.md`, and `.ai/skills/` is intentionally empty pending the official hackathon skills.
 
-## Current status
-
-The existing Python worker and mocked tests are migrated into the package structure. Its live XProtect, Hafnia, MIP SDK, ffprobe, and YOLO paths still require the corresponding local services, tools, credentials, and model weights. Supabase persistence, authentication, and dashboard features remain unimplemented.
