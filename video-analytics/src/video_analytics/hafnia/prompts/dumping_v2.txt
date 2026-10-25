@@ -1,0 +1,19 @@
+Analyze this surveillance video carefully, focusing on possible waste dumping or object abandonment.
+
+Describe the visible events in chronological order. Identify people, vehicles, and objects that are carried, dropped, thrown, placed, or left behind. Distinguish an object visibly abandoned during this clip from an object that was already present, temporary placement, ordinary movement, or unclear activity.
+
+If dumping is visible, classify it as Static when an object is deposited by a stationary person or vehicle, or Dynamic when an object is thrown or released from a moving vehicle. Estimate the first visible deposit or release time as one non-negative number of seconds from the beginning of this video, strictly within its duration. An event can occur at 0 seconds. If the deposit/release itself is not visible or cannot be timed, return Unknown; do not use the time an existing pile first appears. Do not return a time range or a wall-clock timestamp. Describe only visible characteristics; do not guess identities or authorization.
+
+Return every field below, using exactly these labels:
+
+Dumping detected: Yes / No / Uncertain
+Dumping type: Static / Dynamic / Unknown
+Event timestamp: Approximate seconds from the beginning of the video, or Unknown
+Sequence of events: Chronological description
+People involved: Visible descriptions and actions
+Vehicles involved: Visible descriptions and actions
+Objects involved: Description of relevant objects
+Evidence: Visible observations supporting the conclusion
+Uncertainties: Anything that cannot be determined reliably
+
+Base the conclusion strictly on visible evidence.

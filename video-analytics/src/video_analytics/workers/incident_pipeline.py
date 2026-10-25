@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -20,8 +21,12 @@ from ..db.persistence import (
     upload_operation,
 )
 from ..detection.activity import write_json_atomic
+from ..detection.plates import PlateRecognizer
 from ..evidence import extract_evidence_frames
+from ..evidence.plates import extract_plate_evidence
 from ..hafnia.client import HafniaClient, HafniaError
+from ..hafnia.investigation import event_reference_matches, response_text, structured_response
+from ..hafnia.prompting import recording_prompt
 from ..models import Camera
 from ..xprotect.alarms import DEFAULT_ALARM_SEVERITY, SuspectedDumpingEventPublisher
 from ..xprotect.client import XProtectError, validate_utc_timestamp
@@ -57,16 +62,71 @@ def _field(response: str, name: str) -> str | None:
 
 
 def _event_seconds(value: str | None) -> float | None:
-    if not value or "unknown" in value.casefold():
+    if not value:
         return None
-    clock = re.search(r"\b(\d{1,2}):(\d{2}(?:\.\d+)?)\b", value)
-    if clock:
-        return int(clock.group(1)) * 60 + float(clock.group(2))
-    number = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:seconds?|secs?|s)\b", value, re.I)
-    return float(number.group(1)) if number else None
+    # Accept one clip-relative time only; never silently reinterpret ranges,
+    # negative offsets, or wall-clock timestamps as a positive event position.
+    match = re.fullmatch(
+        r"\s*(?:(?:approximately|approximate|about|around|at)\s+)?"
+        r"(?:(\d+):(\d{2}(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:seconds?|secs?|s)?)"
+        r"(?:\s+(?:from (?:the )?(?:beginning|start)(?: of (?:the |this )?(?:video|clip|recording))?))?\s*\.?\s*",
+        value,
+        re.I,
+    )
+    if not match:
+        return None
+    if match.group(1) is not None:
+        seconds = float(match.group(2))
+        return int(match.group(1)) * 60 + seconds if seconds < 60 else None
+    return float(match.group(3))
 
 
-def parse_dumping_response(response: str) -> dict[str, Any]:
+def parse_dumping_response(
+    response: str, *, require_event_reference: bool = False
+) -> dict[str, Any]:
+    structured = structured_response(response)
+    if structured is not None:
+        classification = structured.get("dumping_detected", "uncertain")
+        kind = structured.get("dumping_type", "unknown")
+
+        def text(key: str) -> str | None:
+            return response_text(structured.get(key))
+
+        offset = structured.get("event_offset_seconds")
+        unsupported_timing = (
+            "event_timing_basis" in structured
+            and structured.get("event_timing_basis") != "visible_release"
+        ) or ("deposit_observed" in structured and structured.get("deposit_observed") != "yes")
+        if require_event_reference or "event_observation_id" in structured:
+            unsupported_timing = unsupported_timing or not event_reference_matches(structured)
+        uncertainty = text("uncertainty")
+        if offset is not None and unsupported_timing:
+            uncertainty = ((uncertainty + " ") if uncertainty else "") + (
+                "Event time withheld: a consistent, timed release observation was not supplied."
+            )
+        return {
+            "classification": classification
+            if classification in ("yes", "no", "uncertain")
+            else "uncertain",
+            "dumping_type": kind if kind in ("static", "dynamic", "unknown") else "unknown",
+            "event_timestamp_text": str(offset) if offset is not None else "Unknown",
+            "event_offset_seconds": offset
+            if (
+                isinstance(offset, (int, float))
+                and not isinstance(offset, bool)
+                and math.isfinite(offset)
+                and offset >= 0
+                and not unsupported_timing
+            )
+            else None,
+            "description": text("description") or "No description supplied by the model.",
+            "people": text("people"),
+            "vehicles": text("vehicles"),
+            "objects": text("objects"),
+            "evidence": text("evidence"),
+            "uncertainty": uncertainty,
+            "observations": structured["observations"],
+        }
     detected_text = _field(response, "Dumping detected") or "Uncertain"
     detected_token = re.search(r"\b(yes|no|uncertain)\b", detected_text, re.I)
     classification = detected_token.group(1).lower() if detected_token else "uncertain"
@@ -74,17 +134,22 @@ def parse_dumping_response(response: str) -> dict[str, Any]:
     type_token = re.search(r"\b(static|dynamic|unknown)\b", type_text, re.I)
     dumping_type = type_token.group(1).lower() if type_token else "unknown"
     event_text = _field(response, "Event timestamp")
+    uncertainty = _field(response, "Uncertainties")
+    if require_event_reference and _event_seconds(event_text) is not None:
+        uncertainty = ((uncertainty + " ") if uncertainty else "") + (
+            "Event time withheld: a consistent, timed release observation was not supplied."
+        )
     return {
         "classification": classification,
         "dumping_type": dumping_type,
         "event_timestamp_text": event_text,
-        "event_offset_seconds": _event_seconds(event_text),
+        "event_offset_seconds": None if require_event_reference else _event_seconds(event_text),
         "description": _field(response, "Sequence of events") or response.strip(),
         "people": _field(response, "People involved"),
         "vehicles": _field(response, "Vehicles involved"),
         "objects": _field(response, "Objects involved"),
         "evidence": _field(response, "Evidence"),
-        "uncertainty": _field(response, "Uncertainties"),
+        "uncertainty": uncertainty,
     }
 
 
@@ -181,6 +246,7 @@ class IncidentPipeline:
         repository: AnalysisRepository | None = None,
         detector_metadata: dict[str, Any] | None = None,
         alarm_publisher: SuspectedDumpingEventPublisher | None = None,
+        plate_recognizer: PlateRecognizer | None = None,
     ) -> None:
         self.server = server
         self.camera = camera
@@ -197,6 +263,7 @@ class IncidentPipeline:
         self.repository = repository
         self.detector_metadata = detector_metadata or {}
         self.alarm_publisher = alarm_publisher
+        self.plate_recognizer = plate_recognizer
 
     def _queue(self, operation: dict[str, Any]) -> None:
         if self.repository is not None:
@@ -329,8 +396,14 @@ class IncidentPipeline:
             summary_id: str | None = None
             try:
                 requests_attempted += 1
+                prompt = self.prompt
+                if self.prompt_version in ("dumping_v6", "dumping_v7"):
+                    duration = (
+                        end - validate_utc_timestamp(session["recording_start_utc"])
+                    ).total_seconds()
+                    prompt = recording_prompt(prompt, duration)
                 request, created = self.hafnia.create_summary(
-                    self.prompt, session["xprotect_uri"], self.model_id
+                    prompt, session["xprotect_uri"], self.model_id
                 )
                 requests_submitted += 1
                 summary_id = created["Id"]
@@ -411,7 +484,19 @@ class IncidentPipeline:
                 raise
         write_json_atomic(analysis_dir / "response.json", response)
         raw_text = response.get("Response") or ""
-        parsed = parse_dumping_response(raw_text)
+        parsed = parse_dumping_response(
+            raw_text, require_event_reference=self.prompt_version == "dumping_v7"
+        )
+        duration = (
+            validate_utc_timestamp(session["recording_end_utc"])
+            - validate_utc_timestamp(session["recording_start_utc"])
+        ).total_seconds()
+        structured = structured_response(raw_text, duration)
+        if structured is not None:
+            parsed["observations"] = structured["observations"]
+        offset = parsed["event_offset_seconds"]
+        if offset is not None and not 0 <= offset < duration:
+            parsed["event_offset_seconds"] = None
         metadata = {
             "camera_id": self.camera.id,
             "camera_name": self.camera.name,
@@ -530,7 +615,40 @@ class IncidentPipeline:
                 session["xprotect_uri"],
                 parsed["event_offset_seconds"],
             )
-            evidence_status = "complete" if len(evidence) == 3 else "partial"
+            if parsed.get("observations"):
+                from ..evidence.extraction import extract_observation_frames
+
+                evidence.extend(
+                    extract_observation_frames(
+                        video,
+                        evidence_dir,
+                        session["recording_start_utc"],
+                        session["xprotect_uri"],
+                        parsed["observations"],
+                    )
+                )
+            plate_scan = {"status": "not_requested"}
+            if self.plate_recognizer is not None:
+                try:
+                    plate_frames, plate_scan = extract_plate_evidence(
+                        video,
+                        evidence_dir / "plates",
+                        session["recording_start_utc"],
+                        session["xprotect_uri"],
+                        self.plate_recognizer,
+                    )
+                    evidence.extend(plate_frames)
+                except (RuntimeError, OSError, ValueError):
+                    plate_scan = {
+                        "status": "failed",
+                        "limitations": "Plate processing failed; no plate conclusion available.",
+                    }
+            video_info["plate_scan"] = plate_scan
+            if evidence:
+                evidence[0].setdefault("metadata", {})["plate_scan"] = plate_scan
+            evidence_status = (
+                "complete" if evidence and not video_info.get("extraction_errors") else "partial"
+            )
         except Exception as exc:
             evidence_error = str(exc)
         position = parse_camera_position(self.camera)
@@ -583,13 +701,14 @@ class IncidentPipeline:
             )
         )
         for frame in evidence:
-            storage_path = f"incidents/{incident_id}/{frame['role']}.jpg"
+            artifact_key = frame.get("artifact_key", frame["role"])
+            storage_path = f"incidents/{incident_id}/{artifact_key}.jpg"
             self._queue(upload_operation(storage_path, frame["path"]))
             self._queue(
                 insert_operation(
                     "evidence",
                     {
-                        "id": stable_id("evidence", incident_id, frame["role"]),
+                        "id": stable_id("evidence", incident_id, artifact_key),
                         "incident_id": incident_id,
                         "role": frame["role"],
                         "storage_path": storage_path,
@@ -598,6 +717,19 @@ class IncidentPipeline:
                         "sha256": frame["sha256"],
                         "extraction_method": frame["extraction_method"],
                         "metadata": {
+                            **frame.get("metadata", {}),
+                            **(
+                                {
+                                    "source_frame_id": stable_id(
+                                        "evidence",
+                                        incident_id,
+                                        frame["metadata"]["source_frame_key"],
+                                    )
+                                }
+                                if frame.get("metadata", {}).get("source_frame_key")
+                                else {}
+                            ),
+                            "observation_id": frame.get("observation_id"),
                             "camera_recording_uri": frame["camera_recording_uri"],
                             "simulation_run_id": self.simulation_run_id,
                         },

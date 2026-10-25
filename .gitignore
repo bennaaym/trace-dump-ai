@@ -30,6 +30,8 @@ dist/
 htmlcov/
 
 # Generated monitoring data and model artifacts
+.runtime/
+video-analytics/models/
 runs/
 artifacts/
 exports/

@@ -1,9 +1,11 @@
-import { authenticatedClient } from "../../../_lib/data";
+import { authenticatedClient, signedEvidenceUrls } from "../../../_lib/data";
 import type {
+  EvidenceRole,
   IncidentClassification,
   IncidentDetail,
   ReviewStatus,
 } from "../../../_lib/types";
+import { recordingAccessStatus } from "../_lib/playback-state";
 import { normalizeHafniaResponse } from "../_lib/hafnia-response";
 import { sanitizeDetectorMetadata } from "../_lib/technical-metadata";
 
@@ -23,37 +25,50 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
   if (error) throw new Error(`Unable to load incident: ${error.message}`);
   if (!incident) return null;
 
-  const [detectionResult, analysisResult, reviewsResult, cleanupResult] =
-    await Promise.all([
-      supabase
-        .from("detections")
-        .select(
-          "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,recording_uri,metadata",
-        )
-        .eq("id", incident.detection_id)
-        .single(),
-      supabase
-        .from("analyses")
-        .select(
-          "id,status,hafnia_summary_id,prompt_version,model_id,dumping_detected,dumping_type,event_offset_seconds,description,uncertainty,started_at,completed_at",
-        )
-        .eq("id", incident.source_analysis_id)
-        .single(),
-      supabase
-        .from("incident_reviews")
-        .select("id,reviewer_id,decision,notes,created_at")
-        .eq("incident_id", id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("cleanup_cases")
-        .select("id,status,assigned_team_id,due_at,resolution_outcome")
-        .eq("incident_id", id)
-        .maybeSingle(),
-    ]);
+  const [
+    detectionResult,
+    analysisResult,
+    reviewsResult,
+    cleanupResult,
+    evidenceResult,
+  ] = await Promise.all([
+    supabase
+      .from("detections")
+      .select(
+        "camera_id,activity_start_at,activity_end_at,recording_start_at,recording_end_at,recording_uri,metadata",
+      )
+      .eq("id", incident.detection_id)
+      .single(),
+    supabase
+      .from("analyses")
+      .select(
+        "id,status,hafnia_summary_id,prompt_version,model_id,dumping_detected,dumping_type,event_offset_seconds,description,uncertainty,started_at,completed_at",
+      )
+      .eq("id", incident.source_analysis_id)
+      .single(),
+    supabase
+      .from("incident_reviews")
+      .select("id,reviewer_id,decision,notes,created_at")
+      .eq("incident_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("cleanup_cases")
+      .select("id,status,assigned_team_id,due_at,resolution_outcome")
+      .eq("incident_id", id)
+      .maybeSingle(),
+    supabase
+      .from("evidence")
+      .select(
+        "id,role,storage_path,captured_at,offset_seconds,sha256,extraction_method,metadata",
+      )
+      .eq("incident_id", id)
+      .order("offset_seconds"),
+  ]);
   for (const result of [
     detectionResult,
     analysisResult,
     reviewsResult,
+    evidenceResult,
     ...(cleanupResult.error?.code === "42P01" ? [] : [cleanupResult]),
   ]) {
     if (result.error)
@@ -70,6 +85,11 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
   if (cameraError)
     throw new Error(`Unable to load incident camera: ${cameraError.message}`);
 
+  const evidenceRows = evidenceResult.data ?? [];
+  const signed = await signedEvidenceUrls(
+    supabase,
+    evidenceRows.map((item) => item.storage_path),
+  );
   const analysis = analysisResult.data!;
   const cleanup = cleanupResult.error ? null : cleanupResult.data;
   let assignedTeamName: string | null = null;
@@ -107,13 +127,26 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
   ) {
     throw new Error("Unable to load incident playback state.");
   }
+  const { data: priorityRows, error: priorityError } = await supabase
+    .from("incident_priority_adjustments")
+    .select("id,level,reason,reviewer_id,created_at")
+    .eq("incident_id", id)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (priorityError && !["PGRST205", "42P01"].includes(priorityError.code))
+    throw new Error("Unable to load priority adjustments.");
   const playback = Array.isArray(playbackRows) ? playbackRows[0] : null;
-  const playbackExpired =
-    playback?.retention_expires_at &&
-    Date.parse(playback.retention_expires_at) <= Date.now();
   return {
     id: incident.id,
     detectionId: incident.detection_id,
+    priorityAdjustmentsAvailable: !priorityError,
+    priorityHistory: (priorityRows ?? []).map((row) => ({
+      id: row.id,
+      level: row.level as "high" | "medium" | "low" | null,
+      reason: row.reason,
+      reviewerId: row.reviewer_id,
+      createdAt: row.created_at,
+    })),
     classification: incident.classification as IncidentClassification,
     reviewStatus: incident.review_status as ReviewStatus,
     description: incident.description,
@@ -162,21 +195,33 @@ export async function getIncident(id: string): Promise<IncidentDetail | null> {
         responseError ? null : responseText,
       ),
       investigationResponseAvailable: !responseError && Boolean(responseText),
+      investigationResponseText: responseError ? null : responseText,
       rawResponse:
         viewerRole === "admin" && !responseError ? responseText : null,
     },
     playback: {
-      status: playbackExpired
-        ? "expired"
-        : playback?.status === "pending"
-          ? "preparing"
-          : (playback?.status ?? "unavailable"),
+      status: recordingAccessStatus(
+        playback?.status,
+        playback?.retention_expires_at,
+        Date.now(),
+      ),
       durationSeconds: playback?.duration_seconds ?? null,
       requestedAt: playback?.requested_at ?? null,
       completedAt: playback?.completed_at ?? null,
       retentionExpiresAt: playback?.retention_expires_at ?? null,
       errorCode: playback?.error_code ?? null,
     },
+    evidence: evidenceRows.map((item) => ({
+      id: item.id,
+      role: item.role as EvidenceRole,
+      storagePath: item.storage_path,
+      signedUrl: signed.get(item.storage_path) ?? null,
+      capturedAt: item.captured_at,
+      offsetSeconds: item.offset_seconds,
+      sha256: item.sha256,
+      extractionMethod: item.extraction_method,
+      metadata: (item.metadata ?? {}) as Record<string, unknown>,
+    })),
     reviews: (reviewsResult.data ?? []).map((review) => ({
       id: review.id,
       reviewerId: review.reviewer_id,

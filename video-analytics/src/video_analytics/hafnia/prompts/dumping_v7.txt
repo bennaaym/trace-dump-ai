@@ -1,0 +1,91 @@
+Review the supplied recording for visible waste dumping or object abandonment. Treat the result as a lead for a human investigator, not a legal finding. Inspect the complete selected recording before deciding. Use only what the video shows, including the direction of object movement and what remains afterward.
+
+Evidence-based decision:
+- Track a candidate object through three stages where visible: carried/removed from a person or vehicle; released or placed on the ground; remaining there after the person's hand separates. Describe the concrete movement supporting your conclusion.
+- Return dumping_detected "yes" when a visible deposit/release and the object remaining support suspected dumping. A stationary vehicle, an open boot, bags already on the ground, or someone bending beside a pile alone are insufficient. Do not require the vehicle to drive away if the deposit itself is visible. Do not confuse loading or collecting existing rubbish with unloading.
+- Return "no" when the recording shows no relevant deposit and the actions are adequately visible. Return "uncertain" when an apparent transfer is obscured, too small, off-camera, or its direction is ambiguous. Lack of visibility is not a confident negative.
+- Ordinary temporary placement, an existing pile, and collection are alternatives to assess, not assumptions. Do not infer ownership, intention, permission, hazardous chemistry, or identities.
+- The description and evidence must agree with the decision. If your account says no object is visibly deposited, do not also claim a visible deposit. Recheck that inconsistency before responding; retain unresolved uncertainty explicitly.
+
+Timing and chronology:
+- Times are seconds from the start of THIS SELECTED RECORDING, not the source video, clock overlay, or an earlier loop. A camera can be replaying a file and the selected recording can begin mid-action or cross a loop reset.
+- Give the first clearly visible release/placement moment as event_offset_seconds only when that moment can be located. Do not use the first appearance of an already existing pile, reaching into a boot, or walking toward the rubbish as the release time.
+- Zero is valid only if release is actually visible at the first frame. Never use 0 or 0.3 as a placeholder. If the deposit occurred before the clip, if only its aftermath is visible, or if timing cannot be estimated, return null.
+- Up to eight observations should identify distinct relevant visible states/actions, with individual approximate times when supported. Do not stamp every stage with the same time merely to fill the schema. Unknown times stay null. An abrupt replay/scene reset is not physical object movement.
+
+Return ONLY one JSON object (no Markdown), schema_version "investigation_v1":
+- dumping_detected: "yes", "no", or "uncertain"
+- dumping_type: "static" for a stationary depositor/vehicle, "dynamic" for release from a moving vehicle, otherwise "unknown"
+- deposit_observed: "yes", "no", or "uncertain" for whether the release/placement itself is visible
+- event_offset_seconds: approximate clip-relative number, or null
+- event_timing_basis: "visible_release" when the time is supported by visible release/placement; otherwise "unknown"
+- description: a concise chronological account that agrees with the decision
+- people, vehicles, objects: strings describing visible characteristics and actions; do not read a plate unless its characters are genuinely legible
+- evidence: describe the candidate object's origin, transfer direction, release/contact with the ground, and resulting state; distinguish unseen stages from visible stages
+- uncertainty: visibility limitations and unresolved alternative interpretations; do not claim certainty from missing context
+- observations: array of objects with id (unique letters/digits/hyphens, max 64 chars), offset_seconds (number or null), claim (one visible action/state), and timing_basis ("estimated_visual_position" or "unknown")
+- contradictions: array of unresolved inconsistencies, or []
+- alternative_explanations: plausible alternative interpretations explicitly described as hypotheses, or []
+- risk_factors: object with roadway_blocked, pedestrian_path_blocked, large_material, scattered_material, near_entrance_or_crossing, visible_smoke, visible_leakage. Each contains status ("yes", "no", "unknown"), evidence (short visible basis), and offset_seconds (number or null). Assess effects of the discarded material itself; do not infer hidden hazards. Use unknown when the relevant area cannot be assessed. Do not assign priority; fixed application rules handle it.
+
+Do not supply frame IDs/paths or claim any extracted frame was verified. The worker handles source evidence separately. Omit no required field; use unknown/null/empty arrays when appropriate instead of invented observations.
+
+Required consistency check: event_observation_id must name the observation describing the FIRST actual release/placement (not the parked car, reaching, or aftermath). event_offset_seconds must equal that observation's offset_seconds exactly. If there is no reliably timed release observation, event_observation_id and event_offset_seconds must both be null. Do not choose a placeholder or another observation's time.
+
+Use the following exact object shape. Replace placeholder descriptions with actual findings; retain null for unknown times. risk_factors MUST be an object with all seven named keys, never an array. people, vehicles, objects, evidence, and uncertainty MUST be strings. Do not infer blocked pedestrian access simply from people being absent, and do not count a parked car as discarded waste blocking a road.
+{
+  "schema_version": "investigation_v1",
+  "dumping_detected": "uncertain",
+  "dumping_type": "unknown",
+  "deposit_observed": "uncertain",
+  "event_observation_id": null,
+  "event_offset_seconds": null,
+  "event_timing_basis": "unknown",
+  "description": "Chronological visible account",
+  "people": "Visible people and actions",
+  "vehicles": "Visible vehicles and actions",
+  "objects": "Visible objects and changes",
+  "evidence": "Visible basis for the decision",
+  "uncertainty": "Limitations and unresolved interpretations",
+  "observations": [],
+  "contradictions": [],
+  "alternative_explanations": [],
+  "risk_factors": {
+    "roadway_blocked": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "pedestrian_path_blocked": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "large_material": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "scattered_material": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "near_entrance_or_crossing": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "visible_smoke": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    },
+    "visible_leakage": {
+      "status": "unknown",
+      "evidence": "Describe visible basis or why unknown",
+      "offset_seconds": null
+    }
+  }
+}
+For observations, use {"id":"unique-id","offset_seconds":null,"claim":"actual visible action or state","timing_basis":"unknown"}; replace null and unknown only when the recording supports an approximate position. Do not leave observations empty when relevant actions can be described.

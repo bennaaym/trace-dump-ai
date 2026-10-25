@@ -329,3 +329,135 @@ def test_second_session_in_same_batch_is_deduplicated_after_completed_analysis(t
     assert result["requests_submitted"] == 1
     assert result["repeat_sessions_suppressed"] == 1
     assert [item["status"] for item in result["results"]] == ["completed", "suppressed"]
+
+
+def test_risk_fields_survive_persistence_without_changing_detection(tmp_path, monkeypatch):
+    """Synthetic risk-bearing response, no external requests or live DB writes."""
+    import json
+
+    response = {
+        "schema_version": "investigation_v1",
+        "dumping_detected": "yes",
+        "dumping_type": "static",
+        "event_offset_seconds": 0.3,
+        "description": "Synthetic contract fixture, not a real model finding.",
+        "risk_factors": {
+            "roadway_blocked": {
+                "status": "yes",
+                "evidence": "Synthetic test obstruction.",
+                "offset_seconds": 2.0,
+            }
+        },
+    }
+
+    class RiskHafnia(NegativeHafnia):
+        def wait_for_summary(self, summary_id, **kwargs):
+            return {"Id": summary_id, "Progress": "Completed", "Response": json.dumps(response)}
+
+    monkeypatch.setattr(
+        "video_analytics.workers.incident_pipeline.run_mip_export",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Synthetic unavailable export")),
+    )
+    repository = RecordingRepository()
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "Synthetic camera"),
+        hafnia=RiskHafnia(),
+        prompt="Synthetic prompt",
+        prompt_version="dumping_v5",
+        model_id="synthetic-model",
+        runs_root=tmp_path,
+        simulation_run_id="synthetic-risk",
+        state_store=SimulationStateStore(tmp_path / "state.json"),
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+    )
+    result = pipeline.process([SESSION], 1)
+    assert result["results"][0]["classification"]["classification"] == "yes"
+    completed = next(
+        op
+        for op in repository.operations
+        if op["kind"] == "update" and op["key"].endswith(":completed")
+    )
+    assert json.loads(completed["values"]["raw_response"]["Response"]) == response
+    assert completed["values"]["dumping_detected"] == "yes"
+    incident = next(op for op in repository.operations if op.get("table") == "incidents")
+    assert incident["values"]["review_status"] == "pending_review"
+
+
+def test_plate_scan_and_timeline_keep_main_alarm_and_deduplication(tmp_path, monkeypatch):
+    """Synthetic merge regression: new evidence must retain main's alarm/run behavior."""
+    import json
+
+    response = {
+        "schema_version": "investigation_v1",
+        "dumping_detected": "yes",
+        "dumping_type": "static",
+        "deposit_observed": "yes",
+        "event_timing_basis": "visible_release",
+        "event_offset_seconds": 2.0,
+        "event_observation_id": "release",
+        "observations": [{"id": "release", "claim": "Synthetic release", "offset_seconds": 2.0}],
+    }
+
+    class StructuredHafnia(NegativeHafnia):
+        def wait_for_summary(self, summary_id, **kwargs):
+            return {"Id": summary_id, "Progress": "Completed", "Response": json.dumps(response)}
+
+    module = "video_analytics.workers.incident_pipeline"
+    monkeypatch.setattr(module + ".run_mip_export", lambda **kwargs: tmp_path / "synthetic.avi")
+    frame = {
+        "role": "representative",
+        "path": str(tmp_path / "synthetic.jpg"),
+        "timestamp_utc": SESSION["recording_start_utc"],
+        "offset_seconds": 0,
+        "sha256": "0" * 64,
+        "extraction_method": "synthetic-test",
+        "camera_recording_uri": SESSION["xprotect_uri"],
+    }
+    monkeypatch.setattr(module + ".extract_evidence_frames", lambda *args: ([frame], {}))
+    observations_seen = []
+
+    def observations(*args):
+        observations_seen.extend(args[-1])
+        return []
+
+    monkeypatch.setattr(
+        "video_analytics.evidence.extraction.extract_observation_frames", observations
+    )
+    recognizer = object()
+    plate_calls = []
+
+    def plates(*args):
+        plate_calls.append(args[-1])
+        return [], {"status": "complete", "candidates": 0}
+
+    monkeypatch.setattr(module + ".extract_plate_evidence", plates)
+    repository, publisher = RecordingRepository(), RecordingAlarmPublisher()
+    pipeline = IncidentPipeline(
+        server="http://localhost",
+        camera=Camera(CAMERA_ID, "Synthetic camera"),
+        hafnia=StructuredHafnia(),
+        prompt="Synthetic prompt",
+        prompt_version="dumping_v7",
+        model_id="synthetic-model",
+        runs_root=tmp_path,
+        simulation_run_id="synthetic-merged",
+        state_store=SimulationStateStore(tmp_path / "state.json"),
+        poll_interval=0,
+        poll_timeout=1,
+        repository=repository,
+        alarm_publisher=publisher,
+        plate_recognizer=recognizer,
+    )
+    result = pipeline.process([SESSION, {**SESSION, "id": "second-session"}], 2)
+    assert result["requests_attempted"] == result["requests_submitted"] == 1
+    assert result["repeat_sessions_suppressed"] == 1
+    assert result["results"][0]["evidence_status"] == "complete"
+    assert plate_calls == [recognizer]
+    assert observations_seen[0]["id"] == "release"
+    assert len(publisher.calls) == 1
+    assert publisher.calls[0]["occurred_at_utc"] == "2026-10-16T22:41:42.343Z"
+    rows = [op["values"] for op in repository.operations if op.get("table") == "evidence"]
+    assert rows[0]["metadata"]["plate_scan"]["status"] == "complete"

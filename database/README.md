@@ -1,5 +1,7 @@
 # TraceDump AI database
 
+The investigation integration adds `20261023190000_requeue_expired_incident_recordings.sql` and `20261024000000_incident_priority_adjustments.sql`. They coexist with main's automatic recording queue and cleanup migrations. The development project already has these two migrations; do not recreate its priority table. New environments should apply the complete migration history in order. See [integration notes](../docs/FEATURES_1_TO_4_INTEGRATION.md).
+
 This directory owns the Supabase PostgreSQL schema, Row Level Security policies, private evidence and recording buckets, and operator review workflow. The migrations do not contain seed incidents or production credentials.
 
 ## Entities and relationships

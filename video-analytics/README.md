@@ -38,8 +38,8 @@ The MIP live/export bridges compile their small C# sources on demand using the W
 ## On-demand incident playback
 
 Run `video-analytics playback-worker` as a separate low-priority process after
-applying the incident-recordings migration. The web application queues only
-recordings explicitly requested by an authorized operator. The worker claims
+applying the incident-recordings migrations. The latest schema queues recordings
+when incidents are created; an authorized operator can also request or retry playback. The worker claims
 one incident at a time, exports its persisted XProtect interval, converts it to
 H.264/yuv420p fast-start MP4 with a bounded ffmpeg thread count, validates the
 duration, and uploads it to the private `incident-recordings` bucket.
@@ -49,6 +49,14 @@ default). Before claiming work, the worker removes expired private Storage
 objects and their incident-scoped local export directory. Provenance hashes
 and conversion metadata remain in PostgreSQL. Original MIP exports are never
 served directly to browsers.
+
+## Investigation features
+
+The default versioned prompt is `dumping_v7.txt`, with structured observations and seven observable risk factors. Its requests include the actual clip duration. An event offset requires a matching timed release observation; unsupported values remain unknown. Raw responses and existing analyses are preserved. These validation rules do not establish model accuracy.
+
+Use `--recognize-plates` on an analysis-enabled `monitor` run for local CPU plate detection/OCR after a positive result. Install the optional `.[plates]` extra and provide the supported local weights described in [PLATE_RECOGNITION.md](PLATE_RECOGNITION.md). No automatic plate model download or new environment variables are introduced. Existing alarm publication, simulation deduplication, scene checks, and recording queue behavior remain in place.
+
+See [integration notes](../docs/FEATURES_1_TO_4_INTEGRATION.md) for verification and a manual video test.
 
 ## Commands
 

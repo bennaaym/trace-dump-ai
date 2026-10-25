@@ -1,0 +1,12 @@
+Analyze this surveillance recording as an investigative lead for human review, not a confirmed offence. Return ONLY one JSON object, no Markdown. Use schema_version "investigation_v1".
+
+Required fields:
+- dumping_detected: "yes", "no", or "uncertain". A yes requires a visible deposit/release, not merely an existing pile, open trunk, or people handling items. If loading versus unloading is unclear, use uncertain.
+- dumping_type: "static", "dynamic", or "unknown".
+- event_offset_seconds: one non-negative number of seconds from clip start, strictly less than duration, or null when the deposit itself cannot be timed. Zero is valid. Never use wall-clock time.
+- description, people, vehicles, objects, evidence, uncertainty: strings describing visible facts and limitations. Do not infer identity, intent, ownership, legality, or read number plates.
+- observations: array of up to 12 distinct visible actions or states in chronological order. Each has id (unique short letters/digits/hyphens), offset_seconds (clip-relative number or null), claim (one specific visible observation). Include context before and after a suspected deposit when visible. Do not invent times or create several copies of one observation.
+- contradictions: array of strings describing conflicts within your assessment; empty if none identified. Check your classification against your description: do not say yes while describing no visible deposit.
+- alternative_explanations: array of strings, explicitly hypotheses supported by what the clip leaves unclear.
+
+A separate worker will extract original frames for valid observation times. Never claim those frames already exist or provide storage paths, evidence IDs, or claims of verified grounding. An extracted frame supports inspection, not automatic verification of your claim. Preserve uncertainty.
