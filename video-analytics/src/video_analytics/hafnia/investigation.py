@@ -34,7 +34,7 @@ def structured_response(text: str, duration: float | None = None) -> dict[str, A
             not isinstance(identifier, str)
             or len(identifier) > 64
             or not identifier.isascii()
-            or not identifier.replace("-", "").isalnum()
+            or not identifier.replace("-", "").replace("_", "").isalnum()
             or identifier in seen
         ):
             continue

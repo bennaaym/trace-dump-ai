@@ -37,6 +37,29 @@ def test_structured_response_validates_and_orders_observations():
     assert parse_dumping_response(raw)["classification"] == "yes"
 
 
+def test_structured_response_accepts_prompt_style_underscore_identifiers():
+    raw = json.dumps(
+        {
+            "schema_version": "investigation_v1",
+            "observations": [
+                {
+                    "id": "object_release",
+                    "offset_seconds": 3.5,
+                    "claim": "Synthetic visible release",
+                }
+            ],
+        }
+    )
+
+    assert structured_response(raw, 10)["observations"] == [
+        {
+            "id": "object_release",
+            "claim": "Synthetic visible release",
+            "offset_seconds": 3.5,
+        }
+    ]
+
+
 def test_legacy_and_malformed_responses_do_not_invent_observations():
     assert structured_response("Dumping detected: Yes") is None
     assert structured_response('{"schema_version": "investigation_v1"}')["observations"] == []

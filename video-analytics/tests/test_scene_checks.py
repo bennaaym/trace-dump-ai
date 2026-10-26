@@ -31,11 +31,13 @@ def _stream(frames):
     yield from frames
 
 
-def test_after_evidence_role_is_a_valid_legacy_post_dumping_reference():
+def test_canonical_incident_evidence_roles_are_valid_legacy_references():
     image = _jpeg("camera", datetime.now(UTC), b"reference").jpeg_bytes
 
     assert validate_discarded_object_reference(image, {}, role="after") is True
-    assert validate_discarded_object_reference(image, {}, role="event") is False
+    assert validate_discarded_object_reference(image, {}, role="event") is True
+    assert validate_discarded_object_reference(image, {}, role="representative") is True
+    assert validate_discarded_object_reference(image, {}, role="before") is False
 
 
 def test_snapshot_rejects_repeated_cached_frames(monkeypatch):
@@ -72,6 +74,8 @@ def test_scene_check_prompt_focuses_on_reported_waste_and_latest_stable_view():
     assert "latest stable view" in prompt
     assert "Do not assume a looping clip has before/after progression" in prompt
     assert "wet or dry pavement" in prompt
+    assert "Historical incident text is NOT visual proof" in prompt
+    assert "ordinary pavement texture is not" in prompt
     assert "Metal strips beside the left wall" in prompt
 
 
@@ -124,24 +128,24 @@ class FakeHafniaWithoutConfidence(FakeHafnia):
     def wait_for_summary(self, summary_id, **kwargs):
         result = super().wait_for_summary(summary_id, **kwargs)
         response = json.loads(result["Response"])
+        response["cleanup_area_observable"] = True
         del response["confidence"]
         result["Response"] = json.dumps(response)
         return result
 
 
-def test_scene_check_allows_missing_optional_confidence():
-    result = analyze_scene_clip(
-        FakeHafniaWithoutConfidence(),
-        video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
-        incident_description="A bag beside the curb",
-        reference_role="after",
-        object_region=None,
-        model_id="model",
-        poll_interval=0,
-        poll_timeout=1,
-    )
-    assert result.confidence is None
-    assert result.assessment == "uncertain"
+def test_scene_check_requires_confidence_for_an_automatic_decision():
+    with pytest.raises(HafniaError, match="clearance response is missing numeric confidence"):
+        analyze_scene_clip(
+            FakeHafniaWithoutConfidence(),
+            video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+            incident_description="A bag beside the curb",
+            reference_role="after",
+            object_region=None,
+            model_id="model",
+            poll_interval=0,
+            poll_timeout=1,
+        )
 
 
 class FakeHafniaWithoutOptionalMetrics(FakeHafnia):
@@ -150,28 +154,23 @@ class FakeHafniaWithoutOptionalMetrics(FakeHafnia):
         response = json.loads(result["Response"])
         response["cleanup_area_observable"] = True
         response["key_changes"] = []
-        response.pop("confidence")
         response.pop("cleanup_score")
         result["Response"] = json.dumps(response)
         return result
 
 
-def test_scene_check_accepts_empty_changes_without_inventing_optional_metrics():
-    result = analyze_scene_clip(
-        FakeHafniaWithoutOptionalMetrics(),
-        video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
-        incident_description="A bag beside the curb",
-        reference_role="after",
-        object_region=None,
-        model_id="model",
-        poll_interval=0,
-        poll_timeout=1,
-    )
-
-    assert result.assessment == "appears_cleared"
-    assert result.key_changes == []
-    assert result.confidence is None
-    assert result.cleanup_score is None
+def test_scene_check_requires_cleanup_score_for_an_automatic_decision():
+    with pytest.raises(HafniaError, match="clearance response is missing numeric cleanup_score"):
+        analyze_scene_clip(
+            FakeHafniaWithoutOptionalMetrics(),
+            video_uri="xprotect://localhost/cameras/camera?StartTime=a&EndTime=b",
+            incident_description="A bag beside the curb",
+            reference_role="after",
+            object_region=None,
+            model_id="model",
+            poll_interval=0,
+            poll_timeout=1,
+        )
 
 
 class FakeHafniaContradictoryClearScene(FakeHafnia):

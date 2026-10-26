@@ -14,12 +14,14 @@ def validate_discarded_object_reference(
     *,
     role: str | None = None,
 ) -> bool:
-    """Require a decodable post-event frame or explicit visibility attestation.
+    """Require a decodable canonical incident frame or visibility attestation.
 
-    Incident ``after`` evidence is extracted immediately after the positive
-    dumping event and is the pipeline's canonical post-dumping reference.
-    Older evidence rows predate the explicit visibility metadata, so their
-    provenance is carried by that role instead.
+    The cleanup-check claim selects ``after``, ``event``, then
+    ``representative`` evidence in that order. All three are canonical incident
+    records and older rows legitimately lack the newer visibility metadata.
+    Requiring metadata for the latter two silently prevents a valid comparison
+    from reaching Hafnia, even though the stored frame is the selected incident
+    reference.
     """
     if not image_bytes:
         return False
@@ -27,7 +29,7 @@ def validate_discarded_object_reference(
     if image is None or image.size == 0:
         return False
     return (
-        role == "after"
+        role in {"after", "event", "representative"}
         or metadata.get("discarded_object_visible") is True
         or metadata.get("object_region") is not None
     )

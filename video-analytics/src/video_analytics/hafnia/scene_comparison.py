@@ -73,6 +73,19 @@ Decision rules:
 - uncertain: the location cannot be identified, is obstructed, the footage is insufficient, or
   the material cannot be distinguished.
 
+Strict grounding for a still_visible result:
+- Historical incident text is NOT visual proof that material remains. Never repeat a historical
+  waste description as a current observation unless you can see that discrete item in this clip.
+- Return still_visible only when a bounded physical object is visibly distinguishable from the
+  road or pavement and can be described with its current landmark. A wet patch, reflection,
+  shadow, curb, painted area, stain, compression artifact, or ordinary pavement texture is not
+  dumped material.
+- If the reported location is plainly visible and no discrete item is distinguishable there,
+  return appears_cleared with current_waste_visible false. Do not require a person, vehicle,
+  cleaning action, or before/after progression in the current clip.
+- If you cannot distinguish a concrete object from the surface, return uncertain; do not call it
+  still_visible.
+
 Do not use vehicle or person departure, lack of dumping or cleanup activity, wet or dry pavement,
 or the general appearance of an empty road as proof. Mention one only if it materially obstructs
 the reported waste area. Do not assume a looping clip has before/after progression. If genuine
@@ -84,14 +97,14 @@ Return JSON only as one object:
   "assessment": "still_visible" | "appears_cleared" | "uncertain",
   "cleanup_area_observable": boolean,
   "current_waste_visible": true | false | null,
-  "confidence": optional number from 0 to 1,
+  "confidence": number from 0 to 1,
   "summary": "one conclusion sentence, no more than 25 words",
   "reported_waste": "short waste description taken from the incident context",
   "reported_location": "short location description from the incident context",
   "current_observation": "one concise statement grounded in the current clip",
   "key_changes": ["at most two concise reported-before versus observed-now findings"],
   "limitations": ["at most two material visibility or context limitations"],
-  "cleanup_score": optional number from 0 to 100
+  "cleanup_score": number from 0 to 100
 }}
 
 cleanup_score is retained only for the existing decision-policy contract: 0 means evidence strongly
@@ -150,6 +163,10 @@ def analyze_scene_clip(
             *limitations[:1],
             "The structured assessment conflicted with its visibility fields.",
         ]
+    if assessment == "appears_cleared" and confidence is None:
+        raise HafniaError("Scene-check clearance response is missing numeric confidence")
+    if assessment == "appears_cleared" and cleanup_score is None:
+        raise HafniaError("Scene-check clearance response is missing numeric cleanup_score")
 
     return SceneComparison(
         assessment=assessment,
