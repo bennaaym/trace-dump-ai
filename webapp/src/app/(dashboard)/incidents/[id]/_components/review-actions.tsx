@@ -9,10 +9,10 @@ import { formatDateTime, reviewStatusLabel } from "../../../_lib/format";
 import type { IncidentDetail } from "../../../_lib/types";
 import { ReviewStatusBadge } from "../../_components/incident-status";
 import { reviewIncidentAction } from "../_actions/review";
-import { reviewState, type ReviewDecision } from "../_lib/review-state";
+import { reviewState, type ReviewChoice } from "../_lib/review-state";
 import { incidentWorkspaceHref } from "../_lib/workspace-navigation";
 
-type Decision = ReviewDecision;
+type Decision = ReviewChoice;
 
 export function ReviewActions({ incident }: { incident: IncidentDetail }) {
   const router = useRouter();
@@ -245,14 +245,8 @@ function DecisionButton({
   const styles = {
     confirmed: "bg-green-600 text-white hover:bg-green-700",
     dismissed: "bg-red-500 text-white hover:bg-red-600",
-    needs_investigation: "border text-slate-700 hover:bg-slate-50",
   }[decision];
-  const Icon =
-    decision === "confirmed"
-      ? CheckCircle2
-      : decision === "dismissed"
-        ? CircleOff
-        : SearchCheck;
+  const Icon = decision === "confirmed" ? CheckCircle2 : CircleOff;
   return (
     <button
       type="button"
@@ -260,11 +254,7 @@ function DecisionButton({
       className={`rounded-lg px-3 py-2 text-xs font-semibold ${styles}`}
     >
       <Icon className="mr-1.5 inline size-4" />
-      {decision === "confirmed"
-        ? "Confirm"
-        : decision === "dismissed"
-          ? "Dismiss"
-          : "Needs investigation"}
+      {decision === "confirmed" ? "Confirm" : "Dismiss"}
     </button>
   );
 }

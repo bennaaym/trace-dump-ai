@@ -105,7 +105,7 @@ export function IncidentTabs({ incident }: { incident: IncidentDetail }) {
         {active === "analysis" && (
           <AiAnalysis
             incident={incident}
-            onViewEvidence={() => navigate("overview", "event")}
+            onViewEvidence={(offset) => navigate("overview", String(offset))}
           />
         )}
         {active === "history" && <ReviewHistory incident={incident} />}

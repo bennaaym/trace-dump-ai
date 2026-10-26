@@ -4,6 +4,7 @@ interface TimelineObservation {
   id: string;
   claim: string;
   offset: number | null;
+  verifiedOffset: number | null;
   frame: IncidentDetail["evidence"][number] | null;
 }
 
@@ -62,11 +63,31 @@ export function investigationTimeline(
         id: item.id,
         claim: item.claim.slice(0, 2000),
         offset,
+        verifiedOffset: null,
         frame,
       });
     }
   }
   observations.sort((a, b) => (a.offset ?? Infinity) - (b.offset ?? Infinity));
+  const verifiedOffsets: number[] = [];
+  const verifiedFrames = new Set<string>();
+  for (const observation of observations) {
+    if (observation.offset === null || !observation.frame?.signedUrl) continue;
+    const frameIdentity =
+      observation.frame.sha256 ??
+      observation.frame.storagePath ??
+      observation.frame.signedUrl;
+    const duplicateTime = verifiedOffsets.some(
+      (offset) => Math.abs(offset - observation.offset!) < 0.5,
+    );
+    if (duplicateTime || verifiedFrames.has(frameIdentity)) {
+      observation.frame = null;
+      continue;
+    }
+    observation.verifiedOffset = observation.offset;
+    verifiedOffsets.push(observation.offset);
+    verifiedFrames.add(frameIdentity);
+  }
   const strings = (key: string) =>
     Array.isArray(value[key])
       ? (value[key] as unknown[])

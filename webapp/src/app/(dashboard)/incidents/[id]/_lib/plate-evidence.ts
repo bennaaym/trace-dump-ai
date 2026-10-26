@@ -38,11 +38,3 @@ export function plateEvidence(evidence: Evidence, duration: number) {
       typeof scan?.sampled_frames === "number" ? scan.sampled_frames : null,
   };
 }
-
-export function recordingEvidence(evidence: Evidence): Evidence {
-  return evidence.filter(
-    (frame) =>
-      frame.metadata.kind !== "plate_crop" &&
-      frame.metadata.kind !== "plate_source",
-  );
-}

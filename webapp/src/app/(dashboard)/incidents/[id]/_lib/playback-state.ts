@@ -18,11 +18,6 @@ export function clampSeekOffset(value: number, duration: number) {
   return Math.min(Math.max(value, 0), duration);
 }
 
-export function timelinePosition(value: number | null, duration: number) {
-  if (value == null || duration <= 0) return 0;
-  return Math.min(100, Math.max(0, (value / duration) * 100));
-}
-
 export function recordingAccessStatus(
   status: string | undefined,
   expiresAt: string | null | undefined,

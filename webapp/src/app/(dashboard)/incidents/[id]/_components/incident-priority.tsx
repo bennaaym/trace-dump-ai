@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import type { IncidentDetail } from "../../../_lib/types";
 import { assessPriority, type Priority } from "../_lib/priority";
 import { setPriorityAction } from "../_actions/priority";
-import { LocalDateTime } from "./local-date-time";
 export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
+  const router = useRouter();
   const duration =
     (Date.parse(incident.detection.recordingEndAt) -
       Date.parse(incident.detection.recordingStartAt)) /
@@ -18,8 +18,13 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
   const history = incident.priorityHistory ?? [];
   const latest = history[0];
   const level = latest?.level ?? assessment.level;
+  const automaticReason =
+    assessment.factors.find((factor) => factor.label === assessment.reasons[0])
+      ?.evidence ?? assessment.reasons[0];
+  const displayReason = latest?.level ? latest.reason : automaticReason;
   const [selected, setSelected] = useState(latest?.level ?? "automatic");
   const [reason, setReason] = useState("");
+  const [editing, setEditing] = useState(false);
   const action = useAction(setPriorityAction);
   const error =
     action.result.serverError ||
@@ -32,72 +37,41 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
       aria-label="Incident priority"
       className="rounded-xl border bg-white p-4"
     >
-      <h3 className="text-sm font-bold">
-        Incident priority:{" "}
-        <span
-          className={
-            level === "high"
-              ? "text-red-700"
-              : level === "medium"
-                ? "text-amber-700"
-                : "text-slate-700"
-          }
-        >
-          {level.toUpperCase()}
-        </span>
-      </h3>
-      <p className="mt-1 text-xs text-slate-500">
-        {latest?.level ? "Reviewer adjustment" : "Automatic assessment"}.
-        Priority helps order review; it does not confirm dumping.
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-bold">
+          Priority Level:{" "}
+          <span
+            className={
+              level === "high"
+                ? "text-red-700"
+                : level === "medium"
+                  ? "text-amber-700"
+                  : "text-slate-700"
+            }
+          >
+            {level.toUpperCase()}
+          </span>
+        </h3>
+        {incident.priorityAdjustmentsAvailable && !editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+          >
+            Edit priority
+          </button>
+        )}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-slate-600">
+        <span className="font-semibold text-slate-800">Reason:</span>{" "}
+        {displayReason ?? "No reason available."}
       </p>
-      {latest?.level && (
-        <p className="mt-2 text-xs">Reviewer reason: {latest.reason}</p>
-      )}
-      <p className="mt-3 text-xs font-semibold">
-        Automatic: {assessment.level.toUpperCase()}
-      </p>
-      <ul className="mt-1 list-disc pl-4 text-xs">
-        {assessment.reasons.map((r) => (
-          <li key={r}>{r}</li>
-        ))}
-      </ul>
-      <details className="mt-3 text-xs">
-        <summary className="cursor-pointer font-semibold">
-          Observable risk factors
-        </summary>
-        <ul className="mt-2 space-y-2">
-          {assessment.factors.map((f) => (
-            <li key={f.key}>
-              <strong>
-                {f.label}: {f.status}
-              </strong>
-              <p className="text-slate-600">
-                {f.evidence || "Not reliably assessed in this analysis."}
-              </p>
-              {f.offset != null && (
-                <Link
-                  className="text-teal-700 underline"
-                  href={`/incidents/${incident.id}?tab=overview&seek=${f.offset}`}
-                >
-                  View supporting moment ({f.offset.toFixed(1)}s)
-                </Link>
-              )}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 text-slate-500">
-          High: obstruction, smoke or leakage. Medium: large/scattered material
-          or near an entrance/crossing. Low: all factors absent. Otherwise
-          unknown. Rules: {assessment.ruleVersion}. Findings are AI-reported and
-          require review.
-        </p>
-      </details>
-      {incident.priorityAdjustmentsAvailable ? (
+      {incident.priorityAdjustmentsAvailable && editing ? (
         <form
           className="mt-4 space-y-2"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            action.execute({
+            const result = await action.executeAsync({
               incidentId: incident.id,
               level:
                 selected === "automatic"
@@ -106,6 +80,11 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
               reason,
               expectedId: latest?.id ?? null,
             });
+            if (result?.data && !result.data.error) {
+              setEditing(false);
+              setReason("");
+              router.refresh();
+            }
           }}
         >
           <label
@@ -136,12 +115,26 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
-          <button
-            className="rounded bg-teal-700 px-3 py-2 text-xs text-white disabled:opacity-50"
-            disabled={action.isPending}
-          >
-            {action.isPending ? "Saving..." : "Save priority"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded bg-teal-700 px-3 py-2 text-xs text-white disabled:opacity-50"
+              disabled={action.isPending}
+            >
+              {action.isPending ? "Saving..." : "Save priority"}
+            </button>
+            <button
+              type="button"
+              disabled={action.isPending}
+              onClick={() => {
+                setSelected(latest?.level ?? "automatic");
+                setReason("");
+                setEditing(false);
+              }}
+              className="rounded border px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
           {error && (
             <p role="alert" className="text-xs text-red-700">
               {error}
@@ -153,31 +146,7 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
             </p>
           )}
         </form>
-      ) : (
-        <p className="mt-3 text-xs text-slate-500">
-          Reviewer adjustments unavailable until the priority database migration
-          is applied.
-        </p>
-      )}
-      {history.length > 0 && (
-        <details className="mt-3 text-xs">
-          <summary>Priority adjustment history</summary>
-          <ol className="mt-2 space-y-2">
-            {history.map((h) => (
-              <li key={h.id}>
-                <strong>{h.level?.toUpperCase() ?? "AUTOMATIC"}</strong>:{" "}
-                {h.reason}
-                <p className="text-slate-500">
-                  <LocalDateTime value={h.createdAt} /> |{" "}
-                  {h.reviewerId === incident.viewer.id
-                    ? "You"
-                    : `Operator ${h.reviewerId.slice(0, 8)}`}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </details>
-      )}
+      ) : null}
     </section>
   );
 }

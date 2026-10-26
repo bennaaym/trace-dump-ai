@@ -43,6 +43,38 @@ def test_legacy_and_malformed_responses_do_not_invent_observations():
     assert structured_response("[1,2]") is None
 
 
+def test_repeated_near_identical_observation_times_are_not_presented_as_a_sequence():
+    raw = json.dumps(
+        {
+            "schema_version": "investigation_v1",
+            "observations": [
+                {
+                    "id": "release",
+                    "offset_seconds": 0,
+                    "claim": "Synthetic object release",
+                },
+                {
+                    "id": "aftermath",
+                    "offset_seconds": 0.2,
+                    "claim": "Synthetic object remains on the ground",
+                },
+                {
+                    "id": "duplicate-claim",
+                    "offset_seconds": 4,
+                    "claim": "Synthetic object release",
+                },
+            ],
+        }
+    )
+    observations = structured_response(raw, 10)["observations"]
+    assert [item["id"] for item in observations] == [
+        "release",
+        "aftermath",
+    ]
+    assert observations[0]["offset_seconds"] == 0
+    assert observations[1]["offset_seconds"] is None
+
+
 def test_observation_frames_keep_worker_owned_links(monkeypatch, tmp_path):
     from video_analytics.evidence import extraction
 

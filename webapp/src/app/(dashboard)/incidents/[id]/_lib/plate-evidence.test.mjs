@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { plateEvidence, recordingEvidence } from "./plate-evidence.ts";
+import { plateEvidence } from "./plate-evidence.ts";
 
 const source = {
   id: "source",
@@ -63,9 +63,4 @@ test("distinguishes missing results from a completed negative sample", () => {
     ).sampled,
     32,
   );
-});
-
-test("plate artifacts stay out of the general recording frame strip", () => {
-  const event = { ...source, id: "event", metadata: {}, role: "event" };
-  assert.deepEqual(recordingEvidence([source, crop, event]), [event]);
 });

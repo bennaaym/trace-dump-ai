@@ -26,8 +26,42 @@ test("links only actual matching evidence and keeps invalid times unknown", () =
     ["early", "late", "outside"],
   );
   assert.equal(result.observations[1].frame.id, "frame");
+  assert.equal(result.observations[1].verifiedOffset, 7);
   assert.equal(result.observations[0].frame, null);
+  assert.equal(result.observations[0].verifiedOffset, null);
   assert.equal(result.observations[2].offset, null);
+});
+
+test("only distinct stored frames verify timeline timestamps", () => {
+  const response = JSON.stringify({
+    schema_version: "investigation_v1",
+    observations: [
+      { id: "release", claim: "Synthetic release", offset_seconds: 0 },
+      { id: "aftermath", claim: "Synthetic aftermath", offset_seconds: 0 },
+    ],
+  });
+  const frames = [
+    {
+      id: "release-frame",
+      offsetSeconds: 0,
+      sha256: "same-source-frame",
+      storagePath: "release.jpg",
+      metadata: { observation_id: "release" },
+      signedUrl: "/release.jpg",
+    },
+    {
+      id: "aftermath-frame",
+      offsetSeconds: 0,
+      sha256: "same-source-frame",
+      storagePath: "aftermath.jpg",
+      metadata: { observation_id: "aftermath" },
+      signedUrl: "/aftermath.jpg",
+    },
+  ];
+  const result = investigationTimeline(response, 20, frames);
+  assert.equal(result.observations[0].verifiedOffset, 0);
+  assert.equal(result.observations[1].verifiedOffset, null);
+  assert.equal(result.observations[1].frame, null);
 });
 test("flags the observed positive-versus-no-deposit conflict in a legacy response", () => {
   const result = investigationTimeline(

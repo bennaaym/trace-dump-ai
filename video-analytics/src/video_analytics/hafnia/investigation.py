@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
+
+_TIMESTAMP_RESOLUTION_SECONDS = 0.5
 
 
 def structured_response(text: str, duration: float | None = None) -> dict[str, Any] | None:
@@ -19,6 +22,8 @@ def structured_response(text: str, duration: float | None = None) -> dict[str, A
         return None
     observations = []
     seen = set()
+    seen_claims: set[str] = set()
+    accepted_offsets: list[float] = []
     for item in (
         value.get("observations", [])[:12] if isinstance(value.get("observations"), list) else []
     ):
@@ -35,7 +40,11 @@ def structured_response(text: str, duration: float | None = None) -> dict[str, A
             continue
         if not isinstance(claim, str) or not claim.strip():
             continue
+        normalized_claim = re.sub(r"[^a-z0-9]+", " ", claim.lower()).strip()
+        if normalized_claim in seen_claims:
+            continue
         seen.add(identifier)
+        seen_claims.add(normalized_claim)
         valid = (
             isinstance(offset, (int, float))
             and not isinstance(offset, bool)
@@ -44,6 +53,13 @@ def structured_response(text: str, duration: float | None = None) -> dict[str, A
             and offset >= 0
             and (duration is None or offset < duration)
         )
+        if valid and any(
+            abs(float(offset) - accepted) < _TIMESTAMP_RESOLUTION_SECONDS
+            for accepted in accepted_offsets
+        ):
+            valid = False
+        if valid:
+            accepted_offsets.append(float(offset))
         observations.append(
             {
                 "id": identifier[:64],

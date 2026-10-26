@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   clampSeekOffset,
   recordingAccessStatus,
-  timelinePosition,
   validEventOffset,
 } from "./playback-state.ts";
 
@@ -20,17 +19,10 @@ test("rejects missing and out-of-range AI event offsets", () => {
   assert.equal(validEventOffset(21, 20), null);
 });
 
-test("clamps keyframe seeks to the playable interval", () => {
+test("clamps playback seeks to the playable interval", () => {
   assert.equal(clampSeekOffset(-2, 20), 0);
   assert.equal(clampSeekOffset(8, 20), 8);
   assert.equal(clampSeekOffset(24, 20), 20);
-});
-
-test("positions partial evidence safely on the timeline", () => {
-  assert.equal(timelinePosition(null, 20), 0);
-  assert.equal(timelinePosition(5, 20), 25);
-  assert.equal(timelinePosition(25, 20), 100);
-  assert.equal(timelinePosition(5, 0), 0);
 });
 
 test("expired derivative timestamps never hide queued preparation or failure", () => {

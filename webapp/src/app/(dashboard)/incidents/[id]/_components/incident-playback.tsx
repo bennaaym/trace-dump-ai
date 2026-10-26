@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CircleAlert,
@@ -8,22 +7,12 @@ import {
   Film,
   LoaderCircle,
   RefreshCw,
-  ScanSearch,
 } from "lucide-react";
 import { useAction } from "next-safe-action/hooks";
 
-import { cn } from "@/lib/utils";
 import type { IncidentDetail, PlaybackStatus } from "../../../_lib/types";
 import { preparePlaybackAction } from "../_actions/playback";
-import {
-  clampSeekOffset,
-  timelinePosition,
-  validEventOffset,
-} from "../_lib/playback-state";
-import { recordingEvidence } from "../_lib/plate-evidence";
-import { preferredEvidence } from "./evidence-viewer-state";
-
-type Evidence = IncidentDetail["evidence"][number];
+import { clampSeekOffset, validEventOffset } from "../_lib/playback-state";
 
 export function IncidentPlayback({
   incident,
@@ -32,9 +21,6 @@ export function IncidentPlayback({
   incident: IncidentDetail;
   initialSeek: string | null;
 }) {
-  const evidence = recordingEvidence(incident.evidence);
-  const preferred = preferredEvidence(evidence);
-  const [selectedId, setSelectedId] = useState(preferred?.id ?? null);
   const [status, setStatus] = useState<PlaybackStatus>(
     incident.playback.status,
   );
@@ -50,7 +36,6 @@ export function IncidentPlayback({
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const initialJumpDone = useRef(false);
   const prepare = useAction(preparePlaybackAction);
-  const selected = evidence.find((item) => item.id === selectedId) ?? preferred;
   const recordingDuration = Math.max(
     0,
     (Date.parse(incident.detection.recordingEndAt) -
@@ -199,15 +184,8 @@ export function IncidentPlayback({
     );
   }
 
-  function selectFrame(item: Evidence) {
-    setSelectedId(item.id);
-    if (item.offsetSeconds != null) jumpTo(item.offsetSeconds);
-  }
-
   function jumpToEvent() {
     if (eventOffset == null) return;
-    const event = evidence.find((item) => item.role === "event") ?? preferred;
-    if (event) setSelectedId(event.id);
     jumpTo(eventOffset);
   }
 
@@ -239,7 +217,6 @@ export function IncidentPlayback({
               key={accessGeneration}
               ref={videoRef}
               src={playbackUrl}
-              poster={selected?.signedUrl ?? undefined}
               controls
               preload="metadata"
               playsInline
@@ -251,16 +228,6 @@ export function IncidentPlayback({
               onError={handleVideoError}
               className="size-full bg-black object-contain"
               aria-label="Original XProtect incident recording"
-            />
-          ) : selected?.signedUrl ? (
-            <Image
-              src={selected.signedUrl}
-              alt="Selected incident evidence preview"
-              fill
-              priority
-              unoptimized
-              sizes="(min-width: 1280px) 55vw, 100vw"
-              className="object-contain"
             />
           ) : (
             <div className="absolute inset-0 grid place-items-center text-center text-white">
@@ -315,36 +282,6 @@ export function IncidentPlayback({
           {accessError}
         </p>
       )}
-
-      <EvidenceTimeline
-        evidence={evidence}
-        selected={selected}
-        duration={recordingDuration}
-        onSelect={selectFrame}
-      />
-
-      {selected && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[11px] text-slate-500">
-            <strong className="text-slate-700 capitalize">
-              {selected.role}
-            </strong>{" "}
-            frame at {formatOffset(selected.offsetSeconds)}
-            {selected.capturedAt ? " · " + formatUtc(selected.capturedAt) : ""}
-          </p>
-          {selected.signedUrl && (
-            <a
-              href={selected.signedUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 hover:text-teal-900"
-            >
-              <ScanSearch className="size-3.5" />
-              Open full-resolution frame
-            </a>
-          )}
-        </div>
-      )}
     </section>
   );
 }
@@ -382,7 +319,7 @@ function PlaybackOverlay({
         </p>
         <p className="mt-1 text-xs leading-5 text-slate-300">
           {preparing
-            ? "The original recording remains in XProtect. Keyframes and review tools remain available."
+            ? "The original recording remains in XProtect while secure playback is prepared."
             : "The incident evidence remains available while playback is refreshed or prepared."}
         </p>
         {!preparing && (
@@ -407,89 +344,6 @@ function PlaybackOverlay({
   );
 }
 
-function EvidenceTimeline({
-  evidence,
-  selected,
-  duration,
-  onSelect,
-}: {
-  evidence: Evidence[];
-  selected: Evidence | undefined;
-  duration: number;
-  onSelect: (item: Evidence) => void;
-}) {
-  if (!evidence.length) {
-    return (
-      <p className="rounded-lg border border-dashed bg-slate-50 p-4 text-xs text-slate-500">
-        No keyframes are available for this recording.
-      </p>
-    );
-  }
-  return (
-    <div>
-      <div className="relative mx-2 h-8" aria-hidden="true">
-        <span className="absolute top-3 right-0 left-0 h-1 rounded-full bg-slate-200" />
-        {evidence.map((item) => (
-          <span
-            key={item.id}
-            className={cn(
-              "absolute top-1.5 size-4 -translate-x-1/2 rounded-full border-2 border-white shadow",
-              item.id === selected?.id ? "bg-teal-500" : "bg-slate-400",
-            )}
-            style={{
-              left: timelinePosition(item.offsetSeconds, duration) + "%",
-            }}
-          />
-        ))}
-      </div>
-      <div
-        className="flex gap-3 overflow-x-auto pb-2"
-        aria-label="Recording evidence timeline"
-      >
-        {evidence.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={item.id === selected?.id}
-            onClick={() => onSelect(item)}
-            className={cn(
-              "w-36 shrink-0 overflow-hidden rounded-lg border-2 bg-white text-left outline-none sm:w-44",
-              item.id === selected?.id
-                ? "border-teal-500 ring-2 ring-teal-500/20"
-                : "border-slate-200 hover:border-slate-400 focus-visible:border-teal-500",
-            )}
-          >
-            <span className="relative block aspect-video bg-slate-900">
-              {item.signedUrl ? (
-                <Image
-                  src={item.signedUrl}
-                  alt=""
-                  fill
-                  unoptimized
-                  sizes="176px"
-                  className="object-contain"
-                />
-              ) : (
-                <span className="absolute inset-0 grid place-items-center text-[10px] text-slate-400">
-                  Image unavailable
-                </span>
-              )}
-            </span>
-            <span className="block px-2.5 py-2">
-              <span className="block text-xs font-bold text-slate-800 capitalize">
-                {item.role}
-              </span>
-              <span className="mt-0.5 block text-[10px] text-slate-500">
-                {formatOffset(item.offsetSeconds)}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function formatOffset(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return "time unavailable";
   const minutes = Math.floor(value / 60);
@@ -499,15 +353,5 @@ function formatOffset(value: number | null | undefined) {
     minutes.toString().padStart(2, "0") +
     ":" +
     seconds.toFixed(seconds % 1 === 0 ? 0 : 1).padStart(2, "0")
-  );
-}
-
-function formatUtc(value: string) {
-  return (
-    new Intl.DateTimeFormat("en-GB", {
-      dateStyle: "medium",
-      timeStyle: "medium",
-      timeZone: "UTC",
-    }).format(new Date(value)) + " UTC"
   );
 }
