@@ -200,13 +200,14 @@ export function CleanupWorkspace({
                               Reconcile
                             </Badge>
                           )}
-                          {item.notifications.some(
-                            (notification) => !notification.acknowledgedAt,
-                          ) && (
-                            <Badge tone="danger" className="ml-1">
-                              Attention Required
-                            </Badge>
-                          )}
+                          {item.status !== "resolved" &&
+                            item.notifications.some(
+                              (notification) => !notification.acknowledgedAt,
+                            ) && (
+                              <Badge tone="danger" className="ml-1">
+                                Attention Required
+                              </Badge>
+                            )}
                         </td>
                         <td
                           className={cn(

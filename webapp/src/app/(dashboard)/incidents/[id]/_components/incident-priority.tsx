@@ -32,6 +32,8 @@ export function IncidentPriority({ incident }: { incident: IncidentDetail }) {
     (action.result.validationErrors
       ? "Select a priority and enter a reason (up to 1000 characters)."
       : null);
+  if (level === "unknown") return null;
+
   return (
     <section
       aria-label="Incident priority"
