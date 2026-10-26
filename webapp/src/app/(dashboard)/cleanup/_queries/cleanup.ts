@@ -122,7 +122,15 @@ export async function getCleanupWorkspaceData(): Promise<CleanupWorkspaceData> {
     string,
     NonNullable<typeof evidenceResult.data>[number]
   >();
-  for (const item of evidenceResult.data ?? []) {
+  const sceneReferences = (evidenceResult.data ?? [])
+    .filter(isSceneCheckReference)
+    .sort((left, right) => {
+      const roleDifference =
+        sceneReferenceRank(left.role) - sceneReferenceRank(right.role);
+      if (roleDifference !== 0) return roleDifference;
+      return right.created_at.localeCompare(left.created_at);
+    });
+  for (const item of sceneReferences) {
     if (!evidenceByIncident.has(item.incident_id)) {
       evidenceByIncident.set(item.incident_id, item);
     }
@@ -329,4 +337,24 @@ function mapActors(rows: ActorRow[], currentUserId: string) {
         ? `${row.email ?? "Current operator"} (you)`
         : (row.email ?? `Operator ${row.id.slice(0, 8)}`),
   }));
+}
+
+function isSceneCheckReference(evidence: { role: string; metadata: unknown }) {
+  if (!["after", "event", "representative"].includes(evidence.role))
+    return false;
+  if (
+    !evidence.metadata ||
+    typeof evidence.metadata !== "object" ||
+    Array.isArray(evidence.metadata)
+  ) {
+    return true;
+  }
+  const kind = (evidence.metadata as Record<string, unknown>).kind;
+  return kind !== "plate_crop" && kind !== "plate_source";
+}
+
+function sceneReferenceRank(role: string) {
+  if (role === "after") return 0;
+  if (role === "event") return 1;
+  return 2;
 }

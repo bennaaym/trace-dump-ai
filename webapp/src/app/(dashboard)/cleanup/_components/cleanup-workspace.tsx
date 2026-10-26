@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BellRing,
@@ -295,6 +295,15 @@ function CaseDrawer({
   const [error, setError] = useState<string | null>(null);
   const resolved = cleanupCase.status === "resolved";
   const latestSceneCheck = cleanupCase.sceneChecks[0] ?? null;
+  const sceneCheckInProgress =
+    latestSceneCheck?.status === "scheduled" ||
+    latestSceneCheck?.status === "running";
+
+  useEffect(() => {
+    if (!sceneCheckInProgress) return;
+    const interval = window.setInterval(() => router.refresh(), 5_000);
+    return () => window.clearInterval(interval);
+  }, [router, sceneCheckInProgress]);
   const resolutionNotes =
     cleanupCase.resolutionSource === "ai"
       ? latestSceneCheck?.cleanupScore === null ||

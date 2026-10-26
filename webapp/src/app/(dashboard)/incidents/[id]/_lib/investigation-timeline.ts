@@ -35,7 +35,7 @@ export function investigationTimeline(
         !item ||
         typeof item !== "object" ||
         typeof item.id !== "string" ||
-        !/^[a-z0-9-]{1,64}$/i.test(item.id) ||
+        !/^[a-z0-9_-]{1,64}$/i.test(item.id) ||
         seen.has(item.id) ||
         typeof item.claim !== "string" ||
         !item.claim.trim()

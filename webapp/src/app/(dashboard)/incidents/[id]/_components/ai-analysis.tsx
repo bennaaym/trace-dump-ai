@@ -55,11 +55,8 @@ export function AiAnalysis({
       3,
     ),
   );
-  const timelineItems = timeline.observations.filter(
-    (observation) =>
-      distinctTimelineClaims.has(observation.claim) &&
-      observation.verifiedOffset !== null &&
-      Boolean(observation.frame?.signedUrl),
+  const timelineItems = timeline.observations.filter((observation) =>
+    distinctTimelineClaims.has(observation.claim),
   );
   const uncertainty = investigationUncertainty(
     details.uncertainties ??
@@ -151,7 +148,8 @@ export function AiAnalysis({
                   Evidence timeline
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Only unique stored-frame matches show a timestamp and image.
+                  Stored-frame matches include an image and verified timestamp.
+                  Untimed observations remain visible without either.
                 </p>
               </div>
             </div>

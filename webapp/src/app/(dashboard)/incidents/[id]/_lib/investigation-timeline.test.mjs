@@ -32,6 +32,23 @@ test("links only actual matching evidence and keeps invalid times unknown", () =
   assert.equal(result.observations[2].offset, null);
 });
 
+test("accepts the underscore observation IDs used by the analysis prompt", () => {
+  const response = JSON.stringify({
+    schema_version: "investigation_v1",
+    observations: [
+      {
+        id: "object_release",
+        claim: "Synthetic release",
+        offset_seconds: 3,
+      },
+    ],
+  });
+
+  const result = investigationTimeline(response, 20, []);
+  assert.equal(result.observations[0].id, "object_release");
+  assert.equal(result.observations[0].offset, 3);
+});
+
 test("only distinct stored frames verify timeline timestamps", () => {
   const response = JSON.stringify({
     schema_version: "investigation_v1",
