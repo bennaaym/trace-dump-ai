@@ -720,6 +720,7 @@ function Status({ value }: { value: string }) {
     "frames_valid",
     "hafnia_analysis_completed",
     "incident_created",
+    "monitoring_completed",
   ].includes(value)
     ? "success"
     : [

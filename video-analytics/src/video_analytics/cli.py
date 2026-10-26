@@ -227,7 +227,7 @@ def command_analyze(settings: Settings, args: argparse.Namespace) -> int:
         raise ValueError(f"Camera is disabled: {camera.name} ({camera.id})")
     uri = build_xprotect_uri(camera.id, args.start, args.end)
     prompt = load_prompt(settings.prompt_path)
-    if settings.prompt_path.stem in ("dumping_v6", "dumping_v7"):
+    if settings.prompt_path.stem in ("dumping_v6", "dumping_v7", "dumping_v8", "dumping_v9"):
         duration = (
             validate_utc_timestamp(args.end) - validate_utc_timestamp(args.start)
         ).total_seconds()
@@ -592,6 +592,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--once", action="store_true", help="process at most one queued command and exit"
     )
     simulation.add_argument("--poll-interval", type=float, help="override SIMULATION_POLL_SECONDS")
+    simulation.add_argument(
+        "--plate-models-dir",
+        default=str(PROJECT_ROOT / "models" / "plates"),
+        help=(
+            "directory of supported local ONNX plate models; plate recognition is enabled "
+            "automatically when both models are present"
+        ),
+    )
+    simulation.add_argument(
+        "--no-recognize-plates",
+        action="store_true",
+        help="disable automatic local plate recognition for simulation incidents",
+    )
     return parser
 
 
@@ -655,6 +668,9 @@ def command_simulation_worker(settings: Settings, args: argparse.Namespace) -> i
             "SIMULATION_YOLO_MODEL must point to an existing local .pt file; "
             "automatic model downloads are disabled"
         )
+    plate_recognizer = _optional_plate_recognizer(
+        Path(args.plate_models_dir), enabled=not args.no_recognize_plates
+    )
     worker = SimulationWorker(
         SupabaseClient(
             settings.supabase_url,
@@ -667,6 +683,7 @@ def command_simulation_worker(settings: Settings, args: argparse.Namespace) -> i
             settings.scene_source_control_url,
             settings.scene_source_control_token,
         ),
+        plate_recognizer=plate_recognizer,
     )
     if args.once:
         processed = worker.process_once()
@@ -674,6 +691,31 @@ def command_simulation_worker(settings: Settings, args: argparse.Namespace) -> i
         return 0
     worker.run(poll_seconds=args.poll_interval or settings.simulation_poll_seconds)
     return 0
+
+
+def _optional_plate_recognizer(models_directory: Path, *, enabled: bool) -> PlateRecognizer | None:
+    if not enabled:
+        return None
+    required = (
+        models_directory / "yolo-v9-t-384-license-plates-end2end.onnx",
+        models_directory / "cct_xs_v1_global.onnx",
+    )
+    available = [path.is_file() for path in required]
+    if not any(available):
+        raise RuntimeError(
+            "Simulation plate recognition is enabled but its local models are missing from "
+            f"{models_directory}. Supply --plate-models-dir or explicitly use "
+            "--no-recognize-plates."
+        )
+    if not all(available):
+        missing = next(path for path, exists in zip(required, available, strict=True) if not exists)
+        raise RuntimeError(f"Incomplete local plate model installation; missing: {missing}")
+    try:
+        return PlateRecognizer(models_directory)
+    except ImportError as exc:
+        raise RuntimeError(
+            'Plate models are installed but ONNX Runtime is unavailable; install the ".[plates]" extra'
+        ) from exc
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -23,7 +23,7 @@ from ..db.persistence import (
 from ..detection.activity import write_json_atomic
 from ..detection.plates import PlateRecognizer
 from ..evidence import extract_evidence_frames
-from ..evidence.plates import extract_plate_evidence
+from ..evidence.plates import extract_plate_evidence, normalize_plate_text
 from ..hafnia.client import HafniaClient, HafniaError
 from ..hafnia.investigation import event_reference_matches, response_text, structured_response
 from ..hafnia.prompting import recording_prompt
@@ -122,6 +122,9 @@ def parse_dumping_response(
             "description": text("description") or "No description supplied by the model.",
             "people": text("people"),
             "vehicles": text("vehicles"),
+            "involved_vehicle_plate_text": normalize_plate_text(
+                structured.get("involved_vehicle_plate_text")
+            ),
             "objects": text("objects"),
             "evidence": text("evidence"),
             "uncertainty": uncertainty,
@@ -147,6 +150,7 @@ def parse_dumping_response(
         "description": _field(response, "Sequence of events") or response.strip(),
         "people": _field(response, "People involved"),
         "vehicles": _field(response, "Vehicles involved"),
+        "involved_vehicle_plate_text": None,
         "objects": _field(response, "Objects involved"),
         "evidence": _field(response, "Evidence"),
         "uncertainty": uncertainty,
@@ -397,7 +401,12 @@ class IncidentPipeline:
             try:
                 requests_attempted += 1
                 prompt = self.prompt
-                if self.prompt_version in ("dumping_v6", "dumping_v7"):
+                if self.prompt_version in (
+                    "dumping_v6",
+                    "dumping_v7",
+                    "dumping_v8",
+                    "dumping_v9",
+                ):
                     duration = (
                         end - validate_utc_timestamp(session["recording_start_utc"])
                     ).total_seconds()
@@ -485,7 +494,9 @@ class IncidentPipeline:
         write_json_atomic(analysis_dir / "response.json", response)
         raw_text = response.get("Response") or ""
         parsed = parse_dumping_response(
-            raw_text, require_event_reference=self.prompt_version == "dumping_v7"
+            raw_text,
+            require_event_reference=self.prompt_version
+            in ("dumping_v7", "dumping_v8", "dumping_v9"),
         )
         duration = (
             validate_utc_timestamp(session["recording_end_utc"])
@@ -636,12 +647,19 @@ class IncidentPipeline:
                         session["recording_start_utc"],
                         session["xprotect_uri"],
                         self.plate_recognizer,
+                        parsed.get("involved_vehicle_plate_text"),
                     )
                     evidence.extend(plate_frames)
-                except (RuntimeError, OSError, ValueError):
+                except (RuntimeError, OSError, ValueError) as exc:
+                    logger.exception(
+                        "incident_plate_processing_failed incident_id=%s camera_id=%s",
+                        incident_id,
+                        self.camera.id,
+                    )
                     plate_scan = {
                         "status": "failed",
                         "limitations": "Plate processing failed; no plate conclusion available.",
+                        "error_type": type(exc).__name__,
                     }
             video_info["plate_scan"] = plate_scan
             if evidence:

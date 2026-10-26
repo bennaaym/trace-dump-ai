@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "hafnia" / "prompts" / "dumping_v7.txt"
+DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "hafnia" / "prompts" / "dumping_v9.txt"
 DEFAULT_RUNS_DIR = PROJECT_ROOT / "runs" / "hafnia"
 DEFAULT_EXPORTS_DIR = PROJECT_ROOT / "runs" / "xprotect"
 DEFAULT_PLAYBACK_CACHE_DIR = PROJECT_ROOT / "runs" / "playback"

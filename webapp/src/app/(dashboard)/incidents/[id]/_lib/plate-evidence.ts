@@ -7,7 +7,12 @@ export function plateEvidence(evidence: Evidence, duration: number) {
     .find((value) => value && typeof value === "object") as
     Record<string, unknown> | undefined;
   const candidates = evidence
-    .filter((frame) => frame.metadata.kind === "plate_crop")
+    .filter(
+      (frame) =>
+        frame.metadata.kind === "plate_crop" &&
+        frame.metadata.vehicle_association ===
+          "hafnia_involved_vehicle_and_local_ocr_match",
+    )
     .flatMap((crop) => {
       if (
         crop.offsetSeconds == null ||

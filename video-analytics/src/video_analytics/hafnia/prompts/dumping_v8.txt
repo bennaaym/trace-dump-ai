@@ -1,0 +1,66 @@
+Review the supplied recording for visible waste dumping or object abandonment. Treat the result as a lead for a human investigator, not a legal finding. Inspect the complete selected recording before deciding. Use only what the video shows, including the direction of object movement and what remains afterward.
+
+Evidence-based decision:
+- Track a candidate object through three stages where visible: carried or removed from a person or vehicle; released or placed on the ground; remaining there after the person's hand separates. Describe only stages actually visible in the selected recording.
+- Return dumping_detected "yes" when a visible deposit or release and the object remaining support suspected dumping. A stationary vehicle, open boot, bags already on the ground, or someone bending beside a pile alone are insufficient. Do not require the vehicle to drive away. Do not confuse loading or collecting existing rubbish with unloading.
+- Return "no" when no relevant deposit occurs and the actions are adequately visible. Return "uncertain" when a transfer is obscured, too small, off-camera, or ambiguous. Lack of visibility is not a confident negative.
+- Ordinary temporary placement, an existing pile, and collection are alternatives to assess, not assumptions. Do not infer ownership, intention, permission, hazardous chemistry, or identities.
+- The description, observations, and decision must agree. If no object is visibly deposited, do not claim a visible deposit.
+
+Timing and evidence frames:
+- Times are seconds from the start of THIS SELECTED RECORDING, not the source video, clock overlay, or an earlier loop.
+- Inspect the entire temporal sequence before assigning any time. Zero is valid only for a state or action actually visible in the first frame; never use zero as a placeholder.
+- Every returned observation must have a distinct, non-null offset_seconds and timing_basis "estimated_visual_position". Separate observation times by at least 0.5 seconds so the worker can extract distinct source frames.
+- Include an observation only when its described state or action is visible at that approximate position. If you cannot locate a claim at a distinct position in the recording, omit that observation rather than returning a null, unknown, repeated, or invented time.
+- Do not split one visible instant into several observations. Prefer two or three strong, chronologically distinct moments over a longer repetitive list.
+- Give the first clearly visible release or placement moment as event_offset_seconds only when it can be located. Do not use an already existing pile, reaching into a boot, or walking toward rubbish as the release time.
+- An abrupt replay or scene reset is not physical object movement.
+
+Return ONLY one JSON object with schema_version "investigation_v1" and these fields:
+- dumping_detected: "yes", "no", or "uncertain"
+- dumping_type: "static", "dynamic", or "unknown"
+- deposit_observed: "yes", "no", or "uncertain"
+- event_observation_id: ID of the observation showing first actual release or placement, or null
+- event_offset_seconds: the exact offset of that observation, or null
+- event_timing_basis: "visible_release" when supported, otherwise "unknown"
+- description: concise chronological visible account
+- people, vehicles, objects, evidence, uncertainty: strings grounded only in visible evidence
+- observations: up to eight objects with unique id, distinct non-null offset_seconds, claim, and timing_basis "estimated_visual_position"
+- contradictions: unresolved inconsistencies, or []
+- alternative_explanations: plausible hypotheses, or []
+- risk_factors: all seven required factors below, each with status, evidence, and offset_seconds or null
+
+Do not supply frame IDs or paths. Do not claim the worker verified a frame. Do not read a plate unless its characters are genuinely legible. The worker performs separate local plate recognition.
+
+Required consistency check: event_observation_id must name the observation showing the FIRST actual release or placement, and event_offset_seconds must equal that observation's offset_seconds exactly. If no reliably timed release observation exists, both fields must be null.
+
+Use this exact object shape, replacing placeholders with actual findings:
+{
+  "schema_version": "investigation_v1",
+  "dumping_detected": "uncertain",
+  "dumping_type": "unknown",
+  "deposit_observed": "uncertain",
+  "event_observation_id": null,
+  "event_offset_seconds": null,
+  "event_timing_basis": "unknown",
+  "description": "Chronological visible account",
+  "people": "Visible people and actions",
+  "vehicles": "Visible vehicles and actions",
+  "objects": "Visible objects and changes",
+  "evidence": "Visible basis for the decision",
+  "uncertainty": "Limitations and unresolved interpretations",
+  "observations": [],
+  "contradictions": [],
+  "alternative_explanations": [],
+  "risk_factors": {
+    "roadway_blocked": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "pedestrian_path_blocked": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "large_material": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "scattered_material": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "near_entrance_or_crossing": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "visible_smoke": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "visible_leakage": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null}
+  }
+}
+
+Do not leave observations empty when distinct relevant actions or states can be located. Do not create an observation for an unlocatable narrative claim.

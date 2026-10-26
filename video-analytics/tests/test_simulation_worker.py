@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
+from video_analytics.cli import _optional_plate_recognizer, build_parser
 from video_analytics.config import Settings
+from video_analytics.detection.plates import PlateRecognizer
+from video_analytics.models import Camera
 from video_analytics.workers.simulation import (
     SIMULATION_RUN_SECONDS,
     SimulationWorker,
@@ -143,6 +147,59 @@ def test_simulation_worker_configures_background_playback(tmp_path):
     assert playback.retention_hours == 12
     assert playback.transcode_threads == 2
     assert playback.worker_id == "test-simulation-playback"
+
+
+def test_simulation_pipeline_receives_configured_plate_recognizer(tmp_path):
+    recognizer = cast(PlateRecognizer, object())
+    settings = Settings(
+        xprotect_username="operator",
+        xprotect_password="secret",
+        hafnia_password="secret",
+        exports_dir=tmp_path / "exports",
+    )
+    worker = SimulationWorker(
+        FakeClient(),
+        settings,
+        ReadyAdapter(),
+        plate_recognizer=recognizer,
+    )
+
+    pipeline = worker._pipeline("run-1", Camera("camera-1", "CAM-01"))
+
+    assert pipeline.plate_recognizer is recognizer
+
+
+def test_simulation_worker_auto_discovers_local_plate_models(monkeypatch, tmp_path):
+    detector = tmp_path / "yolo-v9-t-384-license-plates-end2end.onnx"
+    ocr = tmp_path / "cct_xs_v1_global.onnx"
+    detector.write_bytes(b"local detector fixture")
+    ocr.write_bytes(b"local OCR fixture")
+    recognizer = cast(PlateRecognizer, object())
+    constructed_with = []
+    monkeypatch.setattr(
+        "video_analytics.cli.PlateRecognizer",
+        lambda directory: constructed_with.append(directory) or recognizer,
+    )
+
+    result = _optional_plate_recognizer(tmp_path, enabled=True)
+
+    assert result is recognizer
+    assert constructed_with == [tmp_path]
+
+
+def test_simulation_worker_rejects_missing_plate_models_unless_explicitly_disabled(tmp_path):
+    with pytest.raises(RuntimeError, match="local models are missing"):
+        _optional_plate_recognizer(tmp_path, enabled=True)
+    assert _optional_plate_recognizer(tmp_path, enabled=False) is None
+
+
+def test_simulation_worker_plate_options_are_available():
+    args = build_parser().parse_args(
+        ["simulation-worker", "--plate-models-dir", "D:/models/plates", "--no-recognize-plates"]
+    )
+
+    assert args.plate_models_dir == "D:/models/plates"
+    assert args.no_recognize_plates is True
 
 
 def test_persisted_worker_errors_redact_download_urls():

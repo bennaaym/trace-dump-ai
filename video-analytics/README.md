@@ -52,9 +52,9 @@ served directly to browsers.
 
 ## Investigation features
 
-The default versioned prompt is `dumping_v7.txt`, with structured observations and seven observable risk factors. Its requests include the actual clip duration. An event offset requires a matching timed release observation; unsupported values remain unknown. Raw responses and existing analyses are preserved. These validation rules do not establish model accuracy.
+The default versioned prompt is `dumping_v9.txt`, with structured observations, involved-vehicle plate attribution, and seven observable risk factors. Its requests include the actual clip duration. Timeline observations require distinct evidence-backed offsets so the worker can extract separate source frames. Plate processing scans the full bounded export but retains local OCR only when it matches the plate Hafnia attributed to the involved vehicle. An event offset requires a matching timed release observation; unsupported values remain unknown. Raw responses and existing analyses are preserved. These validation rules do not establish model accuracy.
 
-Use `--recognize-plates` on an analysis-enabled `monitor` run for local CPU plate detection/OCR after a positive result. Install the optional `.[plates]` extra and provide the supported local weights described in [PLATE_RECOGNITION.md](PLATE_RECOGNITION.md). No automatic plate model download or new environment variables are introduced. Existing alarm publication, simulation deduplication, scene checks, and recording queue behavior remain in place.
+Use `--recognize-plates` on an analysis-enabled `monitor` run for local CPU plate detection/OCR after a positive result. The simulation worker enables the same processing by default and validates both supported models under `models/plates` at startup; use `--plate-models-dir` for another local directory or `--no-recognize-plates` to opt out explicitly. Install the optional `.[plates]` extra and provide the supported local weights described in [PLATE_RECOGNITION.md](PLATE_RECOGNITION.md). No model is downloaded automatically. Existing alarm publication, simulation deduplication, scene checks, and recording queue behavior remain in place.
 
 See [integration notes](../docs/FEATURES_1_TO_4_INTEGRATION.md) for verification and a manual video test.
 

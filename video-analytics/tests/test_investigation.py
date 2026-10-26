@@ -119,8 +119,28 @@ def test_timeline_prompt_preserves_previous_detection_instructions():
     )
     current = (prompts / "dumping_v5.txt").read_text()
     assert current.startswith(old + "\n\n")
-    assert DEFAULT_PROMPT_PATH.name == "dumping_v7.txt"
+    assert DEFAULT_PROMPT_PATH.name == "dumping_v9.txt"
     assert 'schema_version: "investigation_v1"' in current
+
+
+def test_current_prompt_requires_distinct_evidence_backed_observation_times():
+    from video_analytics.config import DEFAULT_PROMPT_PATH
+
+    prompt = DEFAULT_PROMPT_PATH.read_text()
+    assert "Every returned observation must have a distinct, non-null offset_seconds" in prompt
+    assert "omit that observation" in prompt
+    assert "Never substitute a clearer plate from another vehicle" in prompt
+
+
+def test_involved_vehicle_plate_is_normalized_for_local_ocr_matching():
+    raw = {
+        "schema_version": "investigation_v1",
+        "dumping_detected": "yes",
+        "involved_vehicle_plate_text": "AHN 9916",
+        "observations": [],
+    }
+    parsed = parse_dumping_response(json.dumps(raw))
+    assert parsed["involved_vehicle_plate_text"] == "AHN9916"
 
 
 def test_risk_prompt_preserves_entire_previous_prompt():

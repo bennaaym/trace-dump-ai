@@ -2,6 +2,8 @@
 
 Enable local plate recognition for an analysis-enabled monitoring run with `--recognize-plates`. It runs only after a positive analysis creates a suspected incident and exports the original XProtect recording. It does not change the Hafnia prompt or classification.
 
+`simulation-worker` passes the same recognizer into every camera incident pipeline. Plate recognition is enabled by default, and startup fails clearly when the models are missing so a run cannot silently create incidents with `plate_scan: not_requested`. Its normal command remains `video-analytics simulation-worker`; pass `--plate-models-dir` when the models are stored elsewhere, or `--no-recognize-plates` to disable this processing explicitly.
+
 ```powershell
 .\.venv\Scripts\video-analytics.exe monitor --camera demo_real_dumping_plate_ipoh --duration 45 --fps 5 --detect --yolo-model ".\models\yolo11n.pt" --recognize-plates --simulation-run ipoh-plates-manual-001 --max-hafnia-requests 1
 ```

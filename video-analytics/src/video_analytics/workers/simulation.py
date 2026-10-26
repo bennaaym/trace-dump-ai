@@ -15,6 +15,7 @@ from ..config import Settings, load_prompt
 from ..db.client import SupabaseClient
 from ..db.persistence import PendingSyncStore, SupabaseAnalysisRepository
 from ..detection.activity import ActivityDetector, DetectorConfig
+from ..detection.plates import PlateRecognizer
 from ..hafnia.client import HafniaClient
 from ..models import Camera
 from ..xprotect.alarms import SuspectedDumpingEventPublisher
@@ -57,11 +58,13 @@ class SimulationWorker:
         scene_adapter: SceneSourceAdapter,
         *,
         worker_id: str | None = None,
+        plate_recognizer: PlateRecognizer | None = None,
     ) -> None:
         self.client = client
         self.settings = settings
         self.scene_adapter = scene_adapter
         self.worker_id = worker_id or f"{socket.gethostname()}-simulation-{id(self):x}"
+        self.plate_recognizer = plate_recognizer
         self._stop_events: dict[str, threading.Event] = {}
         self._threads: dict[str, list[threading.Thread]] = {}
         self._deadlines: dict[str, float] = {}
@@ -268,6 +271,7 @@ class SimulationWorker:
         stored_diagnostics: dict[str, Any] | None = None,
     ) -> None:
         diagnostics = _diagnostics(stored_diagnostics)
+        run_segments_exported = 0
         self._patch_monitor(
             run_id,
             camera.id,
@@ -280,6 +284,15 @@ class SimulationWorker:
         run_root = self.settings.exports_dir.parent / "monitoring" / run_id / camera.id
         try:
             pipeline = self._pipeline(run_id, camera)
+            window = 1
+            detector = ActivityDetector(
+                camera.id,
+                camera.name,
+                run_root / f"window-{window:06d}" / "debug",
+                config=DetectorConfig(model=yolo_model),
+            )
+            deadline = time.monotonic() + SIMULATION_RUN_SECONDS
+            self._deadlines[run_id] = max(self._deadlines.get(run_id, deadline), deadline)
             self._patch_monitor(
                 run_id,
                 camera.id,
@@ -287,16 +300,8 @@ class SimulationWorker:
                 last_pipeline_stage="acquiring_frames",
                 last_pipeline_stage_at=_utc_now(),
             )
-            window = 0
             consecutive_acquisition_errors = 0
             while not stop_event.is_set() and time.monotonic() < deadline:
-                window += 1
-                detector = ActivityDetector(
-                    camera.id,
-                    camera.name,
-                    run_root / f"window-{window:06d}" / "debug",
-                    config=DetectorConfig(model=yolo_model),
-                )
                 report = acquire_mip_for_duration(
                     self.settings.xprotect_base_url,
                     camera,
@@ -341,6 +346,7 @@ class SimulationWorker:
                 consecutive_acquisition_errors = 0
                 activity = detector.finalize()
                 sessions = activity["activity_sessions"]
+                run_segments_exported += len(sessions)
                 _increment(
                     diagnostics,
                     motion_positive_frames=activity["motion_hits"],
@@ -476,6 +482,15 @@ class SimulationWorker:
                             raise RuntimeError(latest.get("error") or "Pipeline analysis failed")
                 if not stop_event.is_set():
                     self._patch_monitor(run_id, camera.id, status="monitoring")
+                if time.monotonic() < deadline and not stop_event.is_set():
+                    window += 1
+                    detector = ActivityDetector(
+                        camera.id,
+                        camera.name,
+                        run_root / f"window-{window:06d}" / "debug",
+                        config=DetectorConfig(model=yolo_model),
+                        yolo=detector.yolo,
+                    )
         except Exception as exc:
             logger.exception("simulation_camera_failed run_id=%s camera_id=%s", run_id, camera.id)
             self._patch_monitor(
@@ -488,8 +503,15 @@ class SimulationWorker:
                 error_message=_safe_error_message(exc),
             )
         finally:
-            if stop_event.is_set() or time.monotonic() >= deadline:
-                self._patch_monitor(run_id, camera.id, status="stopped", error_message=None)
+            deadline_reached = time.monotonic() >= deadline
+            if stop_event.is_set() or deadline_reached:
+                final_changes: dict[str, Any] = {"status": "stopped", "error_message": None}
+                if deadline_reached and run_segments_exported == 0:
+                    final_changes.update(
+                        last_pipeline_stage="monitoring_completed",
+                        last_pipeline_stage_at=_utc_now(),
+                    )
+                self._patch_monitor(run_id, camera.id, **final_changes)
 
     def _pipeline(self, run_id: str, camera: Camera) -> IncidentPipeline:
         repository = SupabaseAnalysisRepository(
@@ -515,6 +537,7 @@ class SimulationWorker:
             recording_settle_seconds=self.settings.simulation_recording_settle_seconds,
             repository=repository,
             alarm_publisher=SuspectedDumpingEventPublisher(self._xprotect()),
+            plate_recognizer=self.plate_recognizer,
         )
 
     def _flush_pending_database_sync(self) -> dict[str, Any]:

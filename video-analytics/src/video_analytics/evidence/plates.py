@@ -14,10 +14,69 @@ from ..detection.plates import PlateRecognizer
 from ..xprotect.client import validate_utc_timestamp
 from ..xprotect.video_export import probe_video
 
+MAX_FULL_SCAN_FRAMES = 600
+TILE_OVERLAP = 0.25
+
+
+def normalize_plate_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = "".join(
+        character for character in value.upper() if character.isascii() and character.isalnum()
+    )
+    return normalized if 4 <= len(normalized) <= 9 else None
+
+
+def plate_predictions(recognizer: PlateRecognizer, image: np.ndarray) -> list[dict[str, Any]]:
+    """Preserve detector resolution on portrait/landscape surveillance frames."""
+    height, width = image.shape[:2]
+    views: list[tuple[int, int, np.ndarray]] = [(0, 0, image)]
+    short_side, long_side = min(height, width), max(height, width)
+    if short_side > 0 and long_side / short_side >= 1.35:
+        step = max(1, round(short_side * (1.0 - TILE_OVERLAP)))
+        starts = list(range(0, max(1, long_side - short_side + 1), step))
+        final_start = long_side - short_side
+        if not starts or starts[-1] != final_start:
+            starts.append(final_start)
+        if height > width:
+            views.extend((0, start, image[start : start + short_side, :]) for start in starts)
+        else:
+            views.extend((start, 0, image[:, start : start + short_side]) for start in starts)
+    predictions = []
+    for offset_x, offset_y, view in views:
+        for candidate in recognizer.predict(view):
+            left, top, right, bottom = candidate["box"]
+            predictions.append(
+                {
+                    **candidate,
+                    "box": [
+                        left + offset_x,
+                        top + offset_y,
+                        right + offset_x,
+                        bottom + offset_y,
+                    ],
+                }
+            )
+    return predictions
+
 
 def extract_plate_evidence(
-    video: Path, directory: Path, start_utc: str, recording_uri: str, recognizer: PlateRecognizer
+    video: Path,
+    directory: Path,
+    start_utc: str,
+    recording_uri: str,
+    recognizer: PlateRecognizer,
+    involved_vehicle_plate_text: str | None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    expected_plate = normalize_plate_text(involved_vehicle_plate_text)
+    if expected_plate is None:
+        return [], {
+            "status": "completed",
+            "sampled_frames": 0,
+            "candidates": 0,
+            "matched_candidates": 0,
+            "reason": "No plate text was attributed to the involved vehicle by Hafnia.",
+        }
     probe = probe_video(video)
     capture = cv2.VideoCapture(str(video))
     if not capture.isOpened():
@@ -27,19 +86,26 @@ def extract_plate_evidence(
     if fps <= 0 or not np.isfinite(fps) or probe.frame_count < 1:
         capture.release()
         raise RuntimeError("Recording has invalid plate-sampling metadata")
+    if probe.frame_count > MAX_FULL_SCAN_FRAMES:
+        capture.release()
+        raise RuntimeError(
+            f"Recording exceeds the bounded full plate scan limit of {MAX_FULL_SCAN_FRAMES} frames"
+        )
     selected: dict[str, dict[str, Any]] = {}
     sampled = 0
+    candidates_seen = 0
     try:
-        for index in np.unique(
-            np.linspace(0, probe.frame_count - 1, min(32, probe.frame_count), dtype=int)
-        ):
+        for index in range(probe.frame_count):
             capture.set(cv2.CAP_PROP_POS_FRAMES, int(index))
             ok, image = capture.read()
             if not ok or image is None:
                 continue
             sampled += 1
-            for candidate in recognizer.predict(image):
-                key = candidate["text"] or "unreadable"
+            for candidate in plate_predictions(recognizer, image):
+                candidates_seen += 1
+                key = normalize_plate_text(candidate["text"])
+                if key != expected_plate:
+                    continue
                 current = selected.get(key)
                 if current is not None and candidate["ocr_score"] <= current["ocr_score"]:
                     continue
@@ -70,7 +136,8 @@ def extract_plate_evidence(
                 "ocr_score": candidate["ocr_score"],
                 "detector_score": candidate["detector_score"],
                 "box_xyxy": candidate["box"],
-                "vehicle_association": "unverified",
+                "vehicle_association": "hafnia_involved_vehicle_and_local_ocr_match",
+                "involved_vehicle_plate_text": expected_plate,
                 "source_frame_key": source_key,
                 **recognizer.provenance,
             }
@@ -92,6 +159,7 @@ def extract_plate_evidence(
     return frames, {
         "status": "completed",
         "sampled_frames": sampled,
-        "candidates": len(selected),
-        "limitations": "Bounded sampling can miss plates; OCR and vehicle involvement require human verification.",
+        "candidates": candidates_seen,
+        "matched_candidates": len(selected),
+        "limitations": "The full exported segment was scanned; only local OCR matching the plate Hafnia attributed to the involved vehicle is retained.",
     }

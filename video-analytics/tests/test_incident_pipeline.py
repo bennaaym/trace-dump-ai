@@ -398,6 +398,7 @@ def test_plate_scan_and_timeline_keep_main_alarm_and_deduplication(tmp_path, mon
         "event_timing_basis": "visible_release",
         "event_offset_seconds": 2.0,
         "event_observation_id": "release",
+        "involved_vehicle_plate_text": "SYN 123",
         "observations": [{"id": "release", "claim": "Synthetic release", "offset_seconds": 2.0}],
     }
 
@@ -430,7 +431,7 @@ def test_plate_scan_and_timeline_keep_main_alarm_and_deduplication(tmp_path, mon
     plate_calls = []
 
     def plates(*args):
-        plate_calls.append(args[-1])
+        plate_calls.append((args[-2], args[-1]))
         return [], {"status": "complete", "candidates": 0}
 
     monkeypatch.setattr(module + ".extract_plate_evidence", plates)
@@ -440,7 +441,7 @@ def test_plate_scan_and_timeline_keep_main_alarm_and_deduplication(tmp_path, mon
         camera=Camera(CAMERA_ID, "Synthetic camera"),
         hafnia=StructuredHafnia(),
         prompt="Synthetic prompt",
-        prompt_version="dumping_v7",
+        prompt_version="dumping_v9",
         model_id="synthetic-model",
         runs_root=tmp_path,
         simulation_run_id="synthetic-merged",
@@ -455,7 +456,7 @@ def test_plate_scan_and_timeline_keep_main_alarm_and_deduplication(tmp_path, mon
     assert result["requests_attempted"] == result["requests_submitted"] == 1
     assert result["repeat_sessions_suppressed"] == 1
     assert result["results"][0]["evidence_status"] == "complete"
-    assert plate_calls == [recognizer]
+    assert plate_calls == [(recognizer, "SYN123")]
     assert observations_seen[0]["id"] == "release"
     assert len(publisher.calls) == 1
     assert publisher.calls[0]["occurred_at_utc"] == "2026-10-16T22:41:42.343Z"

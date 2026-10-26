@@ -36,7 +36,9 @@ export function AiAnalysis({
     incident.analysis.investigationResponseText,
     duration,
     incident.evidence,
-    incident.analysis.promptVersion === "dumping_v7",
+    ["dumping_v7", "dumping_v8", "dumping_v9"].includes(
+      incident.analysis.promptVersion,
+    ),
   );
   const eventSummary = conciseText(
     incident.analysis.description ??
@@ -53,8 +55,11 @@ export function AiAnalysis({
       3,
     ),
   );
-  const timelineItems = timeline.observations.filter((observation) =>
-    distinctTimelineClaims.has(observation.claim),
+  const timelineItems = timeline.observations.filter(
+    (observation) =>
+      distinctTimelineClaims.has(observation.claim) &&
+      observation.verifiedOffset !== null &&
+      Boolean(observation.frame?.signedUrl),
   );
   const uncertainty = investigationUncertainty(
     details.uncertainties ??

@@ -1,0 +1,73 @@
+Review the complete supplied recording for visible waste dumping or object abandonment. Treat the result as an investigative lead requiring human review. Use only visible evidence and distinguish unloading or abandonment from loading, collection, temporary placement, and objects already present.
+
+Decision rules:
+- Track the candidate object where visible from its origin, through release or placement, to its resulting state.
+- Return dumping_detected "yes" only when a visible release or placement and the object remaining support suspected dumping.
+- Return "no" when no relevant deposit occurs and the actions are adequately visible.
+- Return "uncertain" when direction, release, origin, or resulting state is obscured or ambiguous.
+- Do not infer intent, permission, ownership, identity, or hazardous contents.
+- The description, observations, evidence, and decision must agree.
+
+Timing and evidence frames:
+- Times are seconds from the start of THIS SELECTED RECORDING, not a clock overlay, source file, or earlier replay loop.
+- Inspect the full temporal sequence before assigning times. Zero is valid only for something actually visible in the first frame and is never a placeholder.
+- Every returned observation must have a distinct, non-null offset_seconds and timing_basis "estimated_visual_position". Separate observation times by at least 0.5 seconds.
+- Include an observation only when its claim is visible at that approximate position. If it cannot be located at a distinct position, omit that observation instead of inventing or repeating a time.
+- Prefer two or three strong chronological moments over repetitive observations.
+- event_observation_id must identify the first actual visible release or placement. event_offset_seconds must exactly equal that observation's offset. If the release cannot be timed, both must be null.
+- A replay reset is not physical object movement.
+
+Involved-vehicle plate association:
+- involved_vehicle_description describes only the vehicle directly used to carry, release, or unload the candidate object. Do not list unrelated parked or passing vehicles in this field.
+- involved_vehicle_plate_text is the exact visible plate text of that involved vehicle, using only letters and digits, or null.
+- Return null when the involved vehicle's plate is not readable. Never substitute a clearer plate from another vehicle.
+- The application independently runs local OCR across the full exported segment and retains a plate only when local OCR exactly matches involved_vehicle_plate_text.
+
+Return ONLY one JSON object with schema_version "investigation_v1" and these fields:
+- dumping_detected: "yes", "no", or "uncertain"
+- dumping_type: "static", "dynamic", or "unknown"
+- deposit_observed: "yes", "no", or "uncertain"
+- event_observation_id: observation ID or null
+- event_offset_seconds: clip-relative number or null
+- event_timing_basis: "visible_release" or "unknown"
+- description: concise chronological visible account
+- people, vehicles, objects, evidence, uncertainty: strings grounded in visible evidence
+- involved_vehicle_description: string or null
+- involved_vehicle_plate_text: exact readable plate or null
+- observations: up to eight objects with unique id, distinct non-null offset_seconds, claim, and timing_basis "estimated_visual_position"
+- contradictions: unresolved inconsistencies, or []
+- alternative_explanations: plausible hypotheses, or []
+- risk_factors: all seven required factors, each with status, evidence, and offset_seconds or null
+
+Do not supply frame IDs or paths and do not claim the worker verified a frame. Use this exact object shape:
+{
+  "schema_version": "investigation_v1",
+  "dumping_detected": "uncertain",
+  "dumping_type": "unknown",
+  "deposit_observed": "uncertain",
+  "event_observation_id": null,
+  "event_offset_seconds": null,
+  "event_timing_basis": "unknown",
+  "description": "Chronological visible account",
+  "people": "Visible people and actions",
+  "vehicles": "Visible vehicles and actions",
+  "objects": "Visible objects and changes",
+  "evidence": "Visible basis for the decision",
+  "uncertainty": "Limitations and unresolved interpretations",
+  "involved_vehicle_description": null,
+  "involved_vehicle_plate_text": null,
+  "observations": [],
+  "contradictions": [],
+  "alternative_explanations": [],
+  "risk_factors": {
+    "roadway_blocked": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "pedestrian_path_blocked": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "large_material": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "scattered_material": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "near_entrance_or_crossing": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "visible_smoke": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null},
+    "visible_leakage": {"status":"unknown","evidence":"Visible basis or why unknown","offset_seconds":null}
+  }
+}
+
+Do not leave observations empty when distinct relevant states or actions can be located. Do not create observations for unlocatable narrative claims.

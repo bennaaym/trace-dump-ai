@@ -16,6 +16,7 @@ const crop = {
     source_frame_id: "source",
     plate_status: "readable",
     plate_text: "ABC1234",
+    vehicle_association: "hafnia_involved_vehicle_and_local_ocr_match",
   },
   signedUrl: "/synthetic-crop.jpg",
 };
@@ -63,4 +64,12 @@ test("distinguishes missing results from a completed negative sample", () => {
     ).sampled,
     32,
   );
+});
+
+test("does not display plates without an involved-vehicle association", () => {
+  const unassociated = {
+    ...crop,
+    metadata: { ...crop.metadata, vehicle_association: "unverified" },
+  };
+  assert.equal(plateEvidence([source, unassociated], 20).candidates.length, 0);
 });
