@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  CircleAlert,
-  Clock3,
-  Film,
-  LoaderCircle,
-  RefreshCw,
-} from "lucide-react";
+import { CircleAlert, Film, LoaderCircle, RefreshCw } from "lucide-react";
 import { useAction } from "next-safe-action/hooks";
 
 import type { IncidentDetail, PlaybackStatus } from "../../../_lib/types";
@@ -184,11 +178,6 @@ export function IncidentPlayback({
     );
   }
 
-  function jumpToEvent() {
-    if (eventOffset == null) return;
-    jumpTo(eventOffset);
-  }
-
   async function requestPreparation() {
     setAccessError(null);
     recoveryAttempted.current = false;
@@ -252,25 +241,8 @@ export function IncidentPlayback({
             />
           )}
         </div>
-        <div className="flex flex-col justify-between gap-3 border-t border-white/10 bg-slate-900 px-4 py-3 text-white sm:flex-row sm:items-center">
-          <div>
-            <p className="text-xs font-bold">Original XProtect recording</p>
-            <p className="mt-1 text-[10px] text-slate-400">
-              {formatOffset(recordingDuration)} total · playback does not
-              confirm wrongdoing
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={eventOffset == null}
-            onClick={jumpToEvent}
-            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-teal-500 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-          >
-            <Clock3 className="size-3.5" />
-            {eventOffset == null
-              ? "Event time unknown"
-              : `Jump to suspected event at approximately ${formatOffset(eventOffset)}`}
-          </button>
+        <div className="border-t border-white/10 bg-slate-900 px-4 py-3 text-white">
+          <p className="text-xs font-bold">Original XProtect recording</p>
         </div>
       </div>
 
@@ -341,17 +313,5 @@ function PlaybackOverlay({
         )}
       </div>
     </div>
-  );
-}
-
-function formatOffset(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "time unavailable";
-  const minutes = Math.floor(value / 60);
-  const seconds = value % 60;
-  return (
-    "+" +
-    minutes.toString().padStart(2, "0") +
-    ":" +
-    seconds.toFixed(seconds % 1 === 0 ? 0 : 1).padStart(2, "0")
   );
 }

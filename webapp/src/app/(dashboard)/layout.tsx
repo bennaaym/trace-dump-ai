@@ -40,7 +40,7 @@ function DashboardShellFallback() {
     <div className="min-h-screen bg-slate-100 lg:pl-58">
       <aside className="bg-sidebar fixed inset-y-0 left-0 hidden w-58 lg:block" />
       <div className="h-16 border-b bg-white" />
-      <main className="p-6">Verifying session…</main>
+      <main className="p-6">Loading…</main>
     </div>
   );
 }
