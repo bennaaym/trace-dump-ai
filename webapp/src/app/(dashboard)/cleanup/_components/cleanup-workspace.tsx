@@ -896,7 +896,7 @@ function SceneCheckPanel({
           </dl>
         </div>
       )}
-      {latest?.errorMessage && (
+      {latest?.status !== "cancelled" && latest?.errorMessage && (
         <p className="rounded-lg bg-red-50 p-3 text-red-800">
           {latest.errorMessage}
         </p>
