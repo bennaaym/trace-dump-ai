@@ -1,71 +1,72 @@
 # TraceDump AI
 
-TraceDump AI is a foundation for detecting and investigating suspected waste-dumping activity in surveillance recordings. The planned system combines video monitoring and AI-assisted analysis with an investigator-facing web application. All automated classifications remain subject to human review.
+TraceDump AI is an AI-powered platform that transforms existing CCTV infrastructure into an intelligent system for detecting illegal dumping and managing cleanup operations. By combining Milestone XProtect, computer vision, and Hafnia VLM, it automatically identifies suspected incidents, generates actionable reports with grounded visual evidence, streamlines cleanup coordination, and uses AI-powered scene verification to track incidents through resolution.
 
-## Architecture
+AI results are leads for human review, not confirmed incidents.
 
-The integration of playback reliability, investigation timelines, plate evidence, and incident priority is documented in [features 1–4](docs/FEATURES_1_TO_4_INTEGRATION.md), including checks and the manual video-test command. 
-- **Next.js (`webapp/`)**: investigator workflows, server-rendered queries, and validated Server Action mutations.
-- **Python (`video-analytics/`)**: XProtect acquisition, motion/object detection, Hafnia analysis, evidence extraction, and worker orchestration.
-- **Supabase (`database/`)**: PostgreSQL records, authentication, and evidence storage, managed through reviewed migrations.
-- **External systems**: XProtect supplies recordings; Hafnia analyzes recording references. Their credentials remain server-side.
+![TraceDump AI high-level architecture](fig/Trace_Dump_AI_HLD.png)
 
-## Repository structure
+## Prerequisites
 
-```text
-.
-|-- .ai/                 # Project rules, context, and reserved skill directory
-|-- database/            # Supabase migration ownership
-|-- video-analytics/     # Migrated Python video analytics worker
-|-- webapp/              # Next.js application
-|-- .env.example         # Documented configuration contract
-`-- AGENTS.md            # Main instructions for coding agents
-```
+- Node.js 20.9+, Corepack, and pnpm
+- Python 3.11-3.13
+- A Supabase project, XProtect access, and Hafnia Gateway access
+- For video workers: Windows, the XProtect MIP SDK, and `ffmpeg`/`ffprobe` on `PATH`
 
-## Webapp
+Apply the SQL files in [`database/migrations`](database/migrations) to Supabase in filename order, then create an investigator user in Supabase Authentication.
 
-Requires Node.js 20.9 or newer and pnpm. The scaffold was initialized with Next.js 16, React 19, strict TypeScript, Tailwind CSS 4, shadcn/ui configuration, `next-safe-action`, Zod, ESLint, Prettier, and Knip.
+## Set up the webapp
 
-```bash
+```powershell
 cd webapp
+Copy-Item .env.example .env.local
+corepack enable
 pnpm install
-pnpm dev
-pnpm build
-pnpm lint
-pnpm typecheck
-pnpm format:check
-pnpm knip
 ```
 
-Copy the webapp's relevant values from the root `.env.example` into `webapp/.env.local`; Next.js does not automatically load the root `.env`. Only variables prefixed with `NEXT_PUBLIC_` may be sent to the browser.
+Fill in `webapp/.env.local` with the Supabase browser credentials and server-only XProtect credentials.
 
-The Operations Map live preview uses XProtect WebRTC. Configure
-`XPROTECT_BASE_URL`, `XPROTECT_USERNAME`, and `XPROTECT_PASSWORD` in
-`webapp/.env.local`, then start the webapp normally. These values are consumed
-only by the server-side signaling route; the browser receives an opaque session
-handle, SDP, and ICE candidates, never the XProtect bearer token or password.
-The browser must still have network reachability to the API Gateway's WebRTC
-media peer. A deployment separated by NAT or restrictive firewalls requires
-appropriately configured STUN/TURN infrastructure in XProtect.
+## Set up video analytics
 
-## Video analytics
-
-Python 3.11 is the migration baseline; the package currently supports Python 3.11 through 3.13. The migrated worker includes read-only XProtect acquisition/export, MOG2/YOLO activity detection, Hafnia analysis, evidence extraction, and local simulation-run state. Create an isolated environment and install the core development dependencies:
-
-```bash
+```powershell
 cd video-analytics
+Copy-Item .env.example .env
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-python -m pip install -e ".[dev]"
-video-analytics --help
-python -m pytest
-python -m ruff check .
-python -m ruff format --check .
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev,detection]"
 ```
 
-Install `.[dev,detection]` only when Torch and Ultralytics are required. Model weights and Milestone SDK binaries are not stored in this repository. The worker loads `video-analytics/.env` when present; process variables take precedence. It does not read the repository-root `.env` automatically.
+Fill in `video-analytics/.env`. `SIMULATION_YOLO_MODEL` must point to a local `.pt` model; weights are not downloaded automatically.
 
-## Database and AI guidance
+## Launch
 
-`database/migrations/` will hold ordered Supabase SQL migrations once the schema is designed. It does not contain a speculative schema. Coding rules live in `.ai/rules/`, concise project context is in `.ai/context/project.md`, and `.ai/skills/` is intentionally empty pending the official hackathon skills.
+Open separate PowerShell terminals from the repository root.
 
+```powershell
+# Webapp -- http://localhost:3000
+cd webapp
+pnpm dev
+```
+
+```powershell
+# Main monitoring/simulation worker
+cd video-analytics
+.venv\Scripts\Activate.ps1
+video-analytics simulation-worker --no-recognize-plates
+```
+
+Start each supporting queue worker in its own terminal when using incident playback or cleanup scene checks:
+
+```powershell
+cd video-analytics
+.venv\Scripts\Activate.ps1
+video-analytics playback-worker
+```
+
+```powershell
+cd video-analytics
+.venv\Scripts\Activate.ps1
+video-analytics scene-check-worker
+```
+
+Run `video-analytics check` to verify XProtect and Hafnia connectivity before processing video.
